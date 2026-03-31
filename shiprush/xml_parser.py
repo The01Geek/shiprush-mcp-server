@@ -82,7 +82,7 @@ def parse_ship_response(xml_str: str) -> ShipmentResult:
     shipment = root.find(".//Shipment")
     return ShipmentResult(
         shipment_id=_get_text(shipment, "ShipmentId"),
-        tracking_number=_get_text(shipment, "TrackingNumber"),
+        tracking_number=_get_text(shipment, "TrackingNumber") or _get_text(shipment, "ShipmentNumber"),
         carrier=_get_text(shipment, "Carrier"),
         service_name=_get_text(shipment, "ServiceDescription") or _get_text(shipment, "UPSServiceType"),
         label_url=_get_text(shipment, "LabelUrl") or None,
