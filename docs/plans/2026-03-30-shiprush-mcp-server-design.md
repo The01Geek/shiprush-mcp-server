@@ -1,18 +1,19 @@
 # ShipRush MCP Server — Design Document
 
-**Date:** 2026-03-30
-**Status:** Approved
+**Date:** 2026-03-30 (updated 2026-03-31)
+**Status:** Implemented and verified
 **Approach:** Python FastMCP on AWS AgentCore Runtime
+**Repo:** https://github.com/The01Geek/shiprush-mcp-server
 
 ---
 
 ## 1. Overview
 
-Build a reusable MCP server that wraps the ShipRush shipping REST API, exposing multi-carrier shipping operations as MCP tools. The server deploys to AWS Bedrock AgentCore Runtime as a stateless ARM64 container, enabling AI agents (Strands, Claude Code, Q CLI) to automate shipping workflows.
+A reusable MCP server that wraps the ShipRush shipping REST API, exposing multi-carrier shipping operations as MCP tools. The server deploys to AWS Bedrock AgentCore Runtime as a stateless ARM64 container, enabling AI agents (Strands, Claude Code, Q CLI) to automate shipping workflows.
 
 ### Goals
 
-- Expose 5 core ShipRush operations as MCP tools: rate, ship, track, void, address validation
+- Expose core ShipRush operations as MCP tools: rate shopping, ship, track, void
 - Deploy natively on AgentCore Runtime via the starter toolkit (2-command deploy)
 - Target internal workflow automation first, with a path to broader distribution via AgentCore Gateway
 - Support ShipRush sandbox and production environments via configuration
@@ -39,14 +40,13 @@ Build a reusable MCP server that wraps the ShipRush shipping REST API, exposing 
 |  |  0.0.0.0:8000/mcp                             |  |
 |  |                                               |  |
 |  |  Tools:                                       |  |
-|  |  +-- get_shipping_rates                       |  |
-|  |  +-- create_shipment                          |  |
-|  |  +-- track_shipment                           |  |
-|  |  +-- void_shipment                            |  |
-|  |  +-- validate_address                         |  |
+|  |  +-- get_shipping_rates (rate shopping)       |  |
+|  |  +-- create_shipment   (ship via quote)       |  |
+|  |  +-- track_shipment    (by shipment_id)       |  |
+|  |  +-- void_shipment     (by shipment_id)       |  |
 |  |                                               |  |
 |  |  ShipRush Client Layer (httpx async)           |  |
-|  |  -> HTTPS -> ShipRush REST API                |  |
+|  |  -> HTTPS -> ShipRush REST API (XML)          |  |
 |  |     Headers: X-SHIPRUSH-SHIPPING-TOKEN        |  |
 |  +-----------------------------------------------+  |
 |                                                     |
@@ -68,6 +68,7 @@ Build a reusable MCP server that wraps the ShipRush shipping REST API, exposing 
 - **Thin client wrapper** — `httpx` for async HTTP to ShipRush endpoints
 - **XML handled internally** — ShipRush API uses XML TShipment blocks; the MCP surface is clean JSON
 - **No `$ref` in schemas** — AgentCore requires fully resolved, self-contained JSON schemas
+- **Flat tool parameters** — all primitives, no nested Pydantic objects, to avoid `$ref` in generated schemas
 
 ### AgentCore Compliance
 
@@ -87,286 +88,228 @@ Build a reusable MCP server that wraps the ShipRush shipping REST API, exposing 
 
 ### 3.1 `get_shipping_rates`
 
-Get carrier rate quotes for a shipment.
+Rate-shop across all carriers configured in the ShipRush account.
 
-**Input:**
-| Field | Type | Required | Description |
-|---|---|---|---|
-| origin_address | Address | yes | Ship-from address |
-| destination_address | Address | yes | Ship-to address |
-| packages | Package[] | yes | One or more packages |
-| carrier_filter | string | no | "fedex", "ups", "usps", or null for all |
+**Endpoint:** `POST /shipmentservice.svc/shipment/rateshopping`
+
+**Input:** Origin/destination addresses (flat params), package weight/dimensions, optional `carrier_filter`
 
 **Output:**
 ```json
 {
   "rates": [
     {
-      "carrier": "fedex",
-      "service_name": "FedEx Ground",
-      "rate_amount": 12.50,
+      "carrier": "17",
+      "service_name": "USPS Ground Advantage",
+      "service_code": "USPSGNDADV",
+      "rate_amount": 9.46,
       "currency": "USD",
-      "estimated_delivery_date": "2026-04-03"
+      "estimated_delivery_date": "4/4/2026 12:00:00 AM",
+      "transit_days": 4,
+      "quote_id": "rate_abc123",
+      "shipping_account_id": "049082f7-..."
     }
   ]
 }
 ```
 
+**Design note:** Uses `/shipment/rateshopping` (not `/shipment/rate`) to return rates across all configured carriers in one call. The carrier code is auto-detected from the service code pattern since the rate shopping response doesn't include a carrier type field.
+
 ### 3.2 `create_shipment`
 
-Create a shipment and generate a label.
+Create a shipment and generate a label using a quote from rate shopping.
 
-**Input:**
-| Field | Type | Required | Description |
-|---|---|---|---|
-| origin_address | Address | yes | Ship-from address |
-| destination_address | Address | yes | Ship-to address |
-| packages | Package[] | yes | One or more packages |
-| carrier | string | yes | "fedex", "ups", or "usps" |
-| service_name | string | yes | Service name from rate results |
-| reference | string | no | Order ID or custom reference |
+**Endpoint:** `POST /shipmentservice.svc/shipment/ship`
+
+**Input:** `quote_id` (required), `carrier`, `service_code`, `shipping_account_id` (from rate response), origin/destination addresses, package details, optional `reference`
 
 **Output:**
 ```json
 {
-  "tracking_number": "794644790132",
-  "carrier": "fedex",
-  "service_name": "FedEx Ground",
-  "label_url": "https://...",
-  "total_cost": 12.50,
+  "shipment_id": "c05d8af6-...",
+  "tracking_number": "9434636208235322685476",
+  "carrier": "17",
+  "service_name": "USPSGNDADV",
+  "total_cost": 9.46,
   "currency": "USD"
 }
 ```
+
+**Design notes:**
+- Uses `ShipViaQuoteId=true` with `ShipmentQuoteId` from rate shopping to ensure shipped rate matches quoted rate
+- `Carrier` element is required even when using quote — API won't resolve it from the quote alone
+- Tracking number is returned in `ShipmentNumber` (not `TrackingNumber`) — parser handles both fields
+- `shipment_id` is critical — it's the only way to track or void this shipment later
 
 ### 3.3 `track_shipment`
 
 Get tracking status and scan history.
 
-**Input:**
-| Field | Type | Required | Description |
-|---|---|---|---|
-| tracking_number | string | yes | Carrier tracking number |
-| carrier | string | no | Helps disambiguation |
+**Endpoint:** `POST /shipmentservice.svc/shipment/tracking`
+
+**Input:** `shipment_id` (ShipRush internal UUID from `create_shipment`)
 
 **Output:**
 ```json
 {
-  "tracking_number": "794644790132",
-  "carrier": "fedex",
+  "shipment_id": "c05d8af6-...",
+  "tracking_number": "9434636208235322685476",
+  "carrier": "FedEx",
   "status": "In Transit",
   "estimated_delivery": "2026-04-03",
   "events": [
-    {
-      "timestamp": "2026-03-30T14:22:00Z",
-      "location": "Memphis, TN",
-      "description": "Departed FedEx facility"
-    }
+    {"timestamp": "...", "location": "Memphis, TN", "description": "Departed facility"}
   ]
 }
 ```
 
+**Design note:** The tracking endpoint requires `ShipmentId` at the XML root level (not inside `ShipTransaction/Shipment`). There is no API to look up a ShipmentId by tracking number.
+
 ### 3.4 `void_shipment`
 
-Cancel/void a shipment label.
+Cancel/void a shipping label.
 
-**Input:**
-| Field | Type | Required | Description |
-|---|---|---|---|
-| tracking_number | string | yes | Tracking number to void |
-| carrier | string | no | Helps disambiguation |
+**Endpoint:** `POST /shipmentservice.svc/shipment/void`
+
+**Input:** `shipment_id` (ShipRush internal UUID)
 
 **Output:**
 ```json
 {
-  "tracking_number": "794644790132",
+  "shipment_id": "c05d8af6-...",
   "voided": true,
-  "message": "Shipment successfully voided"
+  "message": null
 }
 ```
 
-### 3.5 `validate_address`
+**Design note:** The void endpoint requires `ShipmentId` inside `ShipTransaction/Shipment` (different structure from tracking). Only shipped labels can be voided — pending shipments return "not shipped or already voided".
 
-Validate and correct a shipping address.
+### Removed: `validate_address`
 
-**Input:**
-| Field | Type | Required | Description |
-|---|---|---|---|
-| address | Address | yes | Address to validate |
-
-**Output:**
-```json
-{
-  "valid": true,
-  "corrected_address": { "..." },
-  "suggestions": [],
-  "errors": []
-}
-```
-
-### Shared Types
-
-**Address:**
-```
-{name?: string, company?: string, street1: string, street2?: string,
- city: string, state: string, postal_code: string, country: string}
-```
-
-**Package:**
-```
-{weight_lb: float, length_in?: float, width_in?: float, height_in?: float}
-```
-
-These are inlined (not $ref'd) into each tool's JSON schema per AgentCore requirements.
-
-### Error Handling
-
-All tools return structured errors rather than throwing:
-```json
-{
-  "error": "Invalid postal code",
-  "code": "VALIDATION_ERROR"
-}
-```
-
-Tool descriptions guide the LLM to chain tools naturally (e.g., "Call get_shipping_rates first to find available services, then pass carrier and service_name to create_shipment").
+ShipRush does not expose address validation as a standalone REST API endpoint (returns 404). Address validation is performed internally as part of the shipping flow.
 
 ---
 
-## 4. Project Structure
+## 4. ShipRush API Findings
+
+These are the critical learnings from live API testing that informed the design.
+
+### Carrier Codes
+
+ShipRush uses numeric enum values, not string names:
+
+| Code | Carrier | Notes |
+|------|---------|-------|
+| `0` | UPS | |
+| `1` | FedEx | |
+| `2` | DHL | |
+| `3` | USPS (direct) | |
+| `17` | ShipRush USPS | SR-prefixed accounts use this, not `3` |
+
+The rate shopping response does NOT include a carrier code — it's auto-detected from service code patterns (e.g., `USPSGNDADV` -> `17`, `FedExGround` -> `1`).
+
+### XML Quirks
+
+- **`UPSServiceType`** is the element name for ALL carriers, not just UPS
+- **`ShipmentNumber`** contains the tracking number (not `TrackingNumber`)
+- Error severity can be `error` or `ERROR` (case-insensitive check needed)
+- Valid responses return HTTP 200 even on business errors — check `<IsSuccess>` and `<ShippingMessage>` elements
+
+### Endpoint Availability
+
+| Endpoint | Exists | Notes |
+|----------|--------|-------|
+| `/shipment/rateshopping` | Yes | Multi-carrier rate comparison |
+| `/shipment/rate` | Yes | Single-carrier rating (not used) |
+| `/shipment/ship` | Yes | Label creation |
+| `/shipment/tracking` | Yes | By ShipmentId only |
+| `/shipment/void` | Yes | By ShipmentId only |
+| `/shipment/lookup/services` | Yes | List service types for an account |
+| `/address/validate` | **No** | 404 — not exposed |
+| `/shipment/list` | **No** | 404 — no shipment search/listing |
+| `/shipment/track` | **No** | 404 — wrong path (use `/tracking`) |
+
+### Authentication
+
+- Header: `X-SHIPRUSH-SHIPPING-TOKEN`
+- Tokens generated in ShipRush Web > Settings > User Settings > Developer Tokens
+- Tokens have a test mode flag (`IsTest`) that affects shipping behavior
+- Token shown only once at creation — store securely
+
+---
+
+## 5. Project Structure
 
 ```
 ShipRush-MCP/
-├── server.py                  # FastMCP entry point, 5 tool definitions
+├── server.py              # FastMCP entry point (4 tools)
+├── config.py              # Env var config with .env support
+├── requirements.txt       # Runtime dependencies
+├── .env.example           # Template for environment variables
 ├── shiprush/
-│   ├── __init__.py
-│   ├── client.py              # Async HTTP client for ShipRush REST API
-│   ├── models.py              # Pydantic models (Address, Package, responses)
-│   ├── xml_builder.py         # Build TShipment XML blocks from models
-│   └── xml_parser.py          # Parse ShipRush XML responses into models
-├── config.py                  # Env var loading (tokens, base URL)
-├── requirements.txt           # mcp, httpx, pydantic, bedrock-agentcore-starter-toolkit
-├── __init__.py
-└── tests/
-    ├── test_tools.py          # Integration tests against ShipRush sandbox
-    ├── test_xml_builder.py    # Unit tests for XML serialization
-    ├── test_xml_parser.py     # Unit tests for XML parsing
-    └── fixtures/              # Sample XML responses from sandbox
+│   ├── client.py          # Async HTTP client (httpx)
+│   ├── models.py          # Pydantic models
+│   ├── xml_builder.py     # Build ShipRush XML requests
+│   └── xml_parser.py      # Parse ShipRush XML responses
+├── tests/
+│   ├── test_client.py     # Client tests (mocked HTTP)
+│   ├── test_models.py     # Model validation tests
+│   ├── test_xml_builder.py # XML construction tests
+│   ├── test_xml_parser.py # XML parsing tests
+│   └── fixtures/          # Sample XML responses
+└── docs/plans/            # This design doc
 ```
-
-### Module Responsibilities
-
-- **`server.py`** — thin; declares tools with `@mcp.tool()`, delegates to `shiprush/client.py`
-- **`shiprush/client.py`** — async `httpx` calls to ShipRush REST endpoints, sets auth headers
-- **`shiprush/models.py`** — Pydantic models for all input/output schemas; generates JSON schemas for MCP
-- **`shiprush/xml_builder.py`** — converts Pydantic models to ShipRush TShipment XML
-- **`shiprush/xml_parser.py`** — converts ShipRush XML responses back to Pydantic models
-- **`config.py`** — reads environment variables, provides typed config object
 
 ---
 
-## 5. Configuration
+## 6. Configuration
 
 ### Environment Variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `SHIPRUSH_SHIPPING_TOKEN` | yes | — | X-SHIPRUSH-SHIPPING-TOKEN value |
-| `SHIPRUSH_BASE_URL` | no | `https://sandbox.api.my.shiprush.com` | API base URL. Set to `https://api.my.shiprush.com` for production |
-
-### Dependencies (requirements.txt)
-
-```
-mcp>=1.0
-httpx>=0.27
-pydantic>=2.0
-bedrock-agentcore-starter-toolkit
-```
+| `SHIPRUSH_ENV` | No | `sandbox` | `sandbox` or `production` |
+| `SHIPRUSH_SHIPPING_TOKEN_SANDBOX` | No | — | Token for sandbox API |
+| `SHIPRUSH_SHIPPING_TOKEN_PRODUCTION` | No | — | Token for production API |
+| `SHIPRUSH_SHIPPING_TOKEN` | Fallback | — | Used if env-specific token not set |
+| `SHIPRUSH_BASE_URL` | No | Auto from env | Override API base URL |
 
 ---
 
-## 6. Deployment
+## 7. Deployment
 
-### Local Development
-
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Set token
-export SHIPRUSH_SHIPPING_TOKEN="your-sandbox-token"
-
-# Run locally
-python server.py
-
-# Test with MCP Inspector
-npx @modelcontextprotocol/inspector
-# Connect to http://localhost:8000/mcp
-```
-
-### AgentCore Runtime Deployment
+### AgentCore Runtime
 
 ```bash
-# Step 1: Configure (generates Dockerfile, IAM roles, ECR repo)
+pip install bedrock-agentcore-starter-toolkit
+
 agentcore configure \
   --entrypoint server.py \
   --requirements-file requirements.txt \
   --protocol MCP \
   --name shiprush-mcp-server \
-  --disable-memory --disable-otel \
   --deployment-type container
 
-# Step 2: Deploy (builds ARM64 container, pushes to ECR, launches)
 agentcore launch --agent shiprush-mcp-server
-
-# Output: arn:aws:bedrock-agentcore:{region}:{account}:runtime/shiprush-mcp-server-xxxxx
 ```
 
-### Cleanup
+### Future: AgentCore Gateway
 
-```bash
-agentcore destroy --agent shiprush-mcp-server
-```
-
----
-
-## 7. Testing Strategy
-
-| Phase | Command / Method | What It Validates |
-|---|---|---|
-| **Unit tests** | `pytest tests/test_xml_builder.py tests/test_xml_parser.py` | XML serialization, model validation |
-| **Local integration** | MCP Inspector at `localhost:8000/mcp` | All 5 tools against ShipRush sandbox |
-| **Deployed smoke test** | `aws bedrock-agentcore invoke-agent-runtime` with `tools/list` and `tools/call` | Container health, tool discovery, basic execution |
-| **Agent E2E** | Strands Agent with MCPClient pointing at runtime ARN | Full workflow: rate -> ship -> track |
-
-### Sandbox Endpoints
-
-- Base URL: `https://sandbox.api.my.shiprush.com`
-- Rate endpoint: `/shipmentservice.svc/shipment/rate`
-- Ship endpoint: `/shipmentservice.svc/shipment/ship`
-- Auth header: `X-SHIPRUSH-SHIPPING-TOKEN: {token}`
+When distributing to other teams/customers:
+1. Register runtime as Gateway target
+2. Add OAuth via Cognito/Auth0
+3. Gateway handles routing, auth, and tool discovery
 
 ---
 
-## 8. Future Evolution (not in v1)
-
-| Capability | When | What Changes |
-|---|---|---|
-| **AgentCore Gateway** | When distributing to other teams/customers | Register runtime as Gateway target, add OAuth via Cognito |
-| **Multi-tenant** | When serving multiple ShipRush accounts | Per-request token passing or lookup from Secrets Manager |
-| **Stateful mode** | If interactive workflows needed | Set `stateless_http=False`, add elicitation for rate selection |
-| **Self-hosted (Approach C)** | If needed outside AgentCore | Same server.py, custom Dockerfile, deploy to ECS/EC2 |
-| **Batch operations** | If bulk shipping needed | Add `create_shipments_batch` tool |
-
----
-
-## 9. Research Sources
+## 8. Research Sources
 
 - [Deploy MCP servers in AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-mcp.html)
 - [MCP Protocol Contract](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-mcp-protocol-contract.html)
 - [AgentCore MCP Getting Started](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/mcp-getting-started.html)
 - [MCP Server Targets in Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-MCPservers.html)
 - [From Local MCP Server to AWS in Two Commands](https://dev.to/aws/from-local-mcp-server-to-aws-deployment-in-two-commands-ag4)
-- [AgentCore Runtime Stateful MCP Features](https://aws.amazon.com/about-aws/whats-new/2026/03/amazon-bedrock-agentcore-runtime-stateful-mcp/)
 - [ShipRush Web Non-Visual API Guide](https://docs.shiprush.com/en/for-developers/shipping/my-shiprush-shipping-web-non-visual-api-guide~7395985101005094591)
 - [ShipRush Developer Portal](https://shiprush.com/developer/)
-- [ShipRush SOAP API](https://shiprush.com/web-service/)
+- [ShipRush ShipmentView Class](https://my.shiprush.com/ShipClassesDocs?typeName=ShipmentView)
+- [ShipRush TCarrierType Enum](https://my.shiprush.com/ShipClassesDocs?typeName=TCarrierType)
