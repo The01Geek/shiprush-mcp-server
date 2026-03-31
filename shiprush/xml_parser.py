@@ -54,6 +54,7 @@ def parse_rate_response(xml_str: str) -> list[RateResult]:
             estimated_delivery_date=_get_text(svc, "ExpectedDelivery") or None,
             transit_days=int(_get_text(svc, "TimeInTransitBusinessDays", "0")) or None,
             quote_id=_get_text(svc, "ShipmentQuoteId") or None,
+            shipping_account_id=_get_text(svc, "ShippingAccountId") or None,
         ))
     return rates
 
@@ -63,19 +64,24 @@ def parse_ship_response(xml_str: str) -> ShipmentResult:
     _check_errors(root)
     shipment = root.find(".//Shipment")
     return ShipmentResult(
+        shipment_id=_get_text(shipment, "ShipmentId"),
         tracking_number=_get_text(shipment, "TrackingNumber"),
         carrier=_get_text(shipment, "Carrier"),
-        service_name=_get_text(shipment, "ServiceDescription"),
+        service_name=_get_text(shipment, "ServiceDescription") or _get_text(shipment, "UPSServiceType"),
         label_url=_get_text(shipment, "LabelUrl") or None,
         total_cost=float(_get_text(shipment, "ShippingCharges", "0")),
-        currency=_get_text(shipment, "Currency", "USD"),
+        currency=_get_text(shipment, "CurrencyCode", "USD"),
     )
 
 
 def parse_track_response(xml_str: str) -> TrackingResult:
     root = ET.fromstring(xml_str)
     _check_errors(root)
-    shipment = root.find(".//Shipment")
+    # TrackingResponse has ShipmentId at root and TrackingInfo child
+    shipment_id = _get_text(root, "ShipmentId")
+    tracking_info = root.find(".//TrackingInfo")
+    # Fall back to .//Shipment for legacy format
+    source = tracking_info if tracking_info is not None else root.find(".//Shipment")
     events = []
     for event_el in root.findall(".//Event"):
         events.append(TrackingEvent(
@@ -84,10 +90,11 @@ def parse_track_response(xml_str: str) -> TrackingResult:
             description=_get_text(event_el, "Description"),
         ))
     return TrackingResult(
-        tracking_number=_get_text(shipment, "TrackingNumber"),
-        carrier=_get_text(shipment, "Carrier"),
-        status=_get_text(shipment, "Status"),
-        estimated_delivery=_get_text(shipment, "EstimatedDelivery") or None,
+        shipment_id=shipment_id,
+        tracking_number=_get_text(source, "TrackingNumber") if source is not None else "",
+        carrier=_get_text(source, "Carrier") if source is not None else "",
+        status=_get_text(source, "Status") if source is not None else "",
+        estimated_delivery=(_get_text(source, "EstimatedDelivery") if source is not None else "") or None,
         events=events,
     )
 
@@ -95,15 +102,12 @@ def parse_track_response(xml_str: str) -> TrackingResult:
 def parse_void_response(xml_str: str) -> VoidResult:
     root = ET.fromstring(xml_str)
     _check_errors(root)
-    # Real API uses <IsSuccess> and <ShipTransaction><Shipment><TrackingNumber>
     shipment = root.find(".//Shipment")
-    tracking = _get_text(shipment, "TrackingNumber") if shipment is not None else ""
+    shipment_id = _get_text(shipment, "ShipmentId") if shipment is not None else ""
     is_success = _get_text(root, "IsSuccess", "false").lower() == "true"
-    # Also check legacy format
-    voided = is_success or _get_text(root, "Voided", "false").lower() == "true"
     return VoidResult(
-        tracking_number=tracking or _get_text(root, "TrackingNumber"),
-        voided=voided,
+        shipment_id=shipment_id,
+        voided=is_success,
         message=_get_text(root, "Message") or None,
     )
 

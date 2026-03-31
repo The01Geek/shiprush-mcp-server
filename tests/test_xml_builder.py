@@ -75,23 +75,22 @@ def test_build_rate_request_no_carrier_filter():
 def test_build_ship_request():
     xml_str = build_ship_request(
         ORIGIN, DESTINATION, PACKAGES,
-        carrier="UPS", service_name="UPSGround", reference="ORDER-123",
+        quote_id="rate_abc123", reference="ORDER-123",
     )
     root = ET.fromstring(xml_str)
     assert root.tag == "ShipRequest"
     shipment = root.find("ShipTransaction/Shipment")
-    assert shipment.find("Carrier").text == "0"  # UPS maps to carrier code 0
-    assert shipment.find("UPSServiceType").text == "UPSGround"
+    assert shipment.find("ShipmentQuoteId").text == "rate_abc123"
+    assert shipment.find("ShipViaQuoteId").text == "true"
     order = root.find("ShipTransaction/Order")
     assert order.find("OrderNumber").text == "ORDER-123"
 
 
 def test_build_void_request():
-    xml_str = build_void_request("794644790132", carrier="FedEx")
+    xml_str = build_void_request("448ecd71-76ae-4b98-9118-b41e0028f855")
     root = ET.fromstring(xml_str)
     assert root.tag == "VoidRequest"
     shipment = root.find("ShipTransaction/Shipment")
-    assert shipment.find("TrackingNumber").text == "794644790132"
-    assert shipment.find("Carrier").text == "1"  # FedEx maps to carrier code 1
+    assert shipment.find("ShipmentId").text == "448ecd71-76ae-4b98-9118-b41e0028f855"
 
 

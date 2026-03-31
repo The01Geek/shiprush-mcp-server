@@ -50,6 +50,7 @@ async def get_shipping_rates(
 
 @mcp.tool()
 async def create_shipment(
+    quote_id: str,
     origin_name: str | None = None,
     origin_company: str | None = None,
     origin_street1: str = "",
@@ -70,16 +71,17 @@ async def create_shipment(
     package_length_in: float | None = None,
     package_width_in: float | None = None,
     package_height_in: float | None = None,
-    carrier: str = "",
-    service_name: str = "",
+    carrier: str | None = None,
+    service_code: str | None = None,
+    shipping_account_id: str | None = None,
     reference: str | None = None,
 ) -> dict:
-    """Create a shipment and generate a shipping label. Returns tracking number, label URL, and cost. Call get_shipping_rates first to find the carrier and service_name values."""
+    """Create a shipment and generate a shipping label. Call get_shipping_rates first, then pass quote_id, carrier, service_code, and shipping_account_id from the chosen rate. Returns tracking number, label URL, and cost."""
     origin = Address(name=origin_name, company=origin_company, street1=origin_street1, street2=origin_street2, city=origin_city, state=origin_state, postal_code=origin_postal_code, country=origin_country)
     destination = Address(name=destination_name, company=destination_company, street1=destination_street1, street2=destination_street2, city=destination_city, state=destination_state, postal_code=destination_postal_code, country=destination_country)
     packages = [Package(weight_lb=package_weight_lb, length_in=package_length_in, width_in=package_width_in, height_in=package_height_in)]
     try:
-        result = await client.create_shipment(origin, destination, packages, carrier, service_name, reference)
+        result = await client.create_shipment(origin, destination, packages, quote_id, reference, carrier, service_code, shipping_account_id)
         return result.model_dump()
     except Exception as e:
         return {"error": str(e), "code": "SHIP_ERROR"}
@@ -87,12 +89,11 @@ async def create_shipment(
 
 @mcp.tool()
 async def track_shipment(
-    tracking_number: str,
-    carrier: str | None = None,
+    shipment_id: str,
 ) -> dict:
-    """Get tracking status and scan history for a shipment. Returns current status, estimated delivery, and event history."""
+    """Get tracking status and scan history for a shipment. Use the shipment_id returned by create_shipment."""
     try:
-        result = await client.track_shipment(tracking_number, carrier)
+        result = await client.track_shipment(shipment_id)
         return result.model_dump()
     except Exception as e:
         return {"error": str(e), "code": "TRACK_ERROR"}
@@ -100,12 +101,11 @@ async def track_shipment(
 
 @mcp.tool()
 async def void_shipment(
-    tracking_number: str,
-    carrier: str | None = None,
+    shipment_id: str,
 ) -> dict:
-    """Cancel/void a shipping label. Returns whether the void was successful."""
+    """Cancel/void a shipping label. Use the shipment_id returned by create_shipment."""
     try:
-        result = await client.void_shipment(tracking_number, carrier)
+        result = await client.void_shipment(shipment_id)
         return result.model_dump()
     except Exception as e:
         return {"error": str(e), "code": "VOID_ERROR"}

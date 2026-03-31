@@ -23,8 +23,9 @@ def test_parse_rate_response():
 def test_parse_ship_response():
     xml_str = (FIXTURES / "ship_response.xml").read_text()
     result = parse_ship_response(xml_str)
+    assert result.shipment_id == "448ecd71-76ae-4b98-9118-b41e0028f855"
     assert result.tracking_number == "794644790132"
-    assert result.carrier == "FedEx"
+    assert result.carrier == "1"
     assert result.service_name == "FedEx Ground"
     assert result.total_cost == 12.50
     assert result.label_url == "https://labels.shiprush.com/abc123.pdf"
@@ -33,6 +34,7 @@ def test_parse_ship_response():
 def test_parse_track_response():
     xml_str = (FIXTURES / "track_response.xml").read_text()
     result = parse_track_response(xml_str)
+    assert result.shipment_id == "448ecd71-76ae-4b98-9118-b41e0028f855"
     assert result.tracking_number == "794644790132"
     assert result.status == "In Transit"
     assert result.estimated_delivery == "2026-04-03"
@@ -43,6 +45,6 @@ def test_parse_track_response():
 def test_parse_void_response():
     xml_str = (FIXTURES / "void_response.xml").read_text()
     result = parse_void_response(xml_str)
-    assert result.tracking_number == "794644790132"
+    assert result.shipment_id == "448ecd71-76ae-4b98-9118-b41e0028f855"
     assert result.voided is True
     assert result.message is None

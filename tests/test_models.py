@@ -48,12 +48,14 @@ def test_rate_result():
 
 def test_shipment_result():
     result = ShipmentResult(
+        shipment_id="448ecd71-test",
         tracking_number="794644790132",
         carrier="fedex",
         service_name="FedEx Ground",
         total_cost=12.50,
         currency="USD",
     )
+    assert result.shipment_id == "448ecd71-test"
     assert result.tracking_number == "794644790132"
     assert result.label_url is None
 
@@ -65,6 +67,7 @@ def test_tracking_result():
         description="Departed FedEx facility",
     )
     result = TrackingResult(
+        shipment_id="448ecd71-test",
         tracking_number="794644790132",
         carrier="fedex",
         status="In Transit",
@@ -75,7 +78,7 @@ def test_tracking_result():
 
 
 def test_void_result():
-    result = VoidResult(tracking_number="794644790132", voided=True)
+    result = VoidResult(shipment_id="448ecd71-test", voided=True)
     assert result.message is None
 
 

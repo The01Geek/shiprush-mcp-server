@@ -56,30 +56,24 @@ class ShipRushClient:
         origin: Address,
         destination: Address,
         packages: list[Package],
-        carrier: str,
-        service_name: str,
+        quote_id: str,
         reference: str | None = None,
+        carrier: str | None = None,
+        service_code: str | None = None,
+        shipping_account_id: str | None = None,
     ) -> ShipmentResult:
-        xml = build_ship_request(origin, destination, packages, carrier, service_name, reference)
+        xml = build_ship_request(origin, destination, packages, quote_id, reference, carrier, service_code, shipping_account_id)
         response_xml = await self._post("/shipmentservice.svc/shipment/ship", xml)
         return parse_ship_response(response_xml)
 
-    async def track_shipment(
-        self,
-        tracking_number: str,
-        carrier: str | None = None,
-    ) -> TrackingResult:
+    async def track_shipment(self, shipment_id: str) -> TrackingResult:
         from shiprush.xml_builder import build_tracking_request
-        xml = build_tracking_request(tracking_number)
+        xml = build_tracking_request(shipment_id)
         response_xml = await self._post("/shipmentservice.svc/shipment/tracking", xml)
         return parse_track_response(response_xml)
 
-    async def void_shipment(
-        self,
-        tracking_number: str,
-        carrier: str | None = None,
-    ) -> VoidResult:
-        xml = build_void_request(tracking_number, carrier)
+    async def void_shipment(self, shipment_id: str) -> VoidResult:
+        xml = build_void_request(shipment_id)
         response_xml = await self._post("/shipmentservice.svc/shipment/void", xml)
         return parse_void_response(response_xml)
 

@@ -17,21 +17,22 @@ RATE_XML = """<RateShoppingResponse><IsSuccess>true</IsSuccess><AvailableService
 <TimeInTransitBusinessDays>2</TimeInTransitBusinessDays>
 </AvailableService></AvailableServices></RateShoppingResponse>"""
 
-SHIP_XML = """<ShipResponse><ShipTransaction><Shipment>
-<TrackingNumber>794644790132</TrackingNumber><Carrier>FedEx</Carrier>
-<ServiceType>FedExGround</ServiceType><ServiceDescription>FedEx Ground</ServiceDescription>
-<ShippingCharges>12.50</ShippingCharges><Currency>USD</Currency>
+SHIP_XML = """<ShipResponse><IsSuccess>true</IsSuccess><ShipTransaction><Shipment>
+<ShipmentId>448ecd71-test</ShipmentId>
+<TrackingNumber>794644790132</TrackingNumber><Carrier>1</Carrier>
+<UPSServiceType>FedExGround</UPSServiceType><ServiceDescription>FedEx Ground</ServiceDescription>
+<ShippingCharges>12.50</ShippingCharges><CurrencyCode>USD</CurrencyCode>
 </Shipment></ShipTransaction></ShipResponse>"""
 
-TRACK_XML = """<TrackResponse><ShipTransaction><Shipment>
-<TrackingNumber>794644790132</TrackingNumber><Carrier>FedEx</Carrier>
+TRACK_XML = """<TrackingResponse><ShipmentId>448ecd71-test</ShipmentId>
+<TrackingInfo><TrackingNumber>794644790132</TrackingNumber><Carrier>FedEx</Carrier>
 <Status>Delivered</Status><TrackingEvents><Event>
 <Timestamp>2026-03-30T14:00:00Z</Timestamp><Location>Portland, OR</Location>
 <Description>Delivered</Description></Event></TrackingEvents>
-</Shipment></ShipTransaction></TrackResponse>"""
+</TrackingInfo></TrackingResponse>"""
 
 VOID_XML = """<VoidResponse><Messages /><IsSuccess>true</IsSuccess>
-<ShipTransaction><Shipment><TrackingNumber>794644790132</TrackingNumber>
+<ShipTransaction><Shipment><ShipmentId>448ecd71-test</ShipmentId>
 </Shipment></ShipTransaction></VoidResponse>"""
 
 
@@ -59,7 +60,8 @@ async def test_get_rates():
 async def test_create_shipment():
     client = ShipRushClient(token="test-token", base_url="https://sandbox.api.my.shiprush.com")
     with patch.object(client._http, "post", return_value=_mock_response(SHIP_XML)) as mock_post:
-        result = await client.create_shipment(ORIGIN, DEST, PACKAGES, "FedEx", "FedExGround")
+        result = await client.create_shipment(ORIGIN, DEST, PACKAGES, "rate_abc123")
+        assert result.shipment_id == "448ecd71-test"
         assert result.tracking_number == "794644790132"
         mock_post.assert_called_once()
 
@@ -68,7 +70,7 @@ async def test_create_shipment():
 async def test_track_shipment():
     client = ShipRushClient(token="test-token", base_url="https://sandbox.api.my.shiprush.com")
     with patch.object(client._http, "post", return_value=_mock_response(TRACK_XML)):
-        result = await client.track_shipment("794644790132")
+        result = await client.track_shipment("448ecd71-test")
         assert result.status == "Delivered"
 
 
@@ -76,8 +78,9 @@ async def test_track_shipment():
 async def test_void_shipment():
     client = ShipRushClient(token="test-token", base_url="https://sandbox.api.my.shiprush.com")
     with patch.object(client._http, "post", return_value=_mock_response(VOID_XML)):
-        result = await client.void_shipment("794644790132")
+        result = await client.void_shipment("448ecd71-test")
         assert result.voided is True
+        assert result.shipment_id == "448ecd71-test"
 
 
 

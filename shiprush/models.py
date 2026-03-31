@@ -28,9 +28,11 @@ class RateResult(BaseModel):
     estimated_delivery_date: str | None = None
     transit_days: int | None = None
     quote_id: str | None = None
+    shipping_account_id: str | None = None
 
 
 class ShipmentResult(BaseModel):
+    shipment_id: str
     tracking_number: str
     carrier: str
     service_name: str
@@ -46,6 +48,7 @@ class TrackingEvent(BaseModel):
 
 
 class TrackingResult(BaseModel):
+    shipment_id: str
     tracking_number: str
     carrier: str
     status: str
@@ -54,7 +57,7 @@ class TrackingResult(BaseModel):
 
 
 class VoidResult(BaseModel):
-    tracking_number: str
+    shipment_id: str
     voided: bool
     message: str | None = None
 

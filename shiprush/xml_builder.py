@@ -65,9 +65,11 @@ def build_ship_request(
     origin: Address,
     destination: Address,
     packages: list[Package],
-    carrier: str,
-    service_name: str,
+    quote_id: str,
     reference: str | None = None,
+    carrier: str | None = None,
+    service_code: str | None = None,
+    shipping_account_id: str | None = None,
 ) -> str:
     root = ET.Element("ShipRequest")
     ship_tx = ET.SubElement(root, "ShipTransaction")
@@ -75,8 +77,14 @@ def build_ship_request(
         order = ET.SubElement(ship_tx, "Order")
         ET.SubElement(order, "OrderNumber").text = reference
     shipment = ET.SubElement(ship_tx, "Shipment")
-    ET.SubElement(shipment, "Carrier").text = _carrier_code(carrier)
-    ET.SubElement(shipment, "UPSServiceType").text = service_name
+    ET.SubElement(shipment, "ShipmentQuoteId").text = quote_id
+    ET.SubElement(shipment, "ShipViaQuoteId").text = "true"
+    if carrier:
+        ET.SubElement(shipment, "Carrier").text = _carrier_code(carrier)
+    if service_code:
+        ET.SubElement(shipment, "UPSServiceType").text = service_code
+    if shipping_account_id:
+        ET.SubElement(shipment, "ShippingAccountId").text = shipping_account_id
     for pkg in packages:
         _add_package_element(shipment, pkg)
     _add_address_element(shipment, "ShipperAddress", origin)
@@ -84,21 +92,17 @@ def build_ship_request(
     return ET.tostring(root, encoding="unicode", xml_declaration=False)
 
 
-def build_tracking_request(tracking_number: str) -> str:
+def build_tracking_request(shipment_id: str) -> str:
     root = ET.Element("TrackingRequest")
-    ship_tx = ET.SubElement(root, "ShipTransaction")
-    shipment = ET.SubElement(ship_tx, "Shipment")
-    ET.SubElement(shipment, "TrackingNumber").text = tracking_number
+    ET.SubElement(root, "ShipmentId").text = shipment_id
     return ET.tostring(root, encoding="unicode", xml_declaration=False)
 
 
-def build_void_request(tracking_number: str, carrier: str | None = None) -> str:
+def build_void_request(shipment_id: str) -> str:
     root = ET.Element("VoidRequest")
     ship_tx = ET.SubElement(root, "ShipTransaction")
     shipment = ET.SubElement(ship_tx, "Shipment")
-    ET.SubElement(shipment, "TrackingNumber").text = tracking_number
-    if carrier:
-        ET.SubElement(shipment, "Carrier").text = _carrier_code(carrier)
+    ET.SubElement(shipment, "ShipmentId").text = shipment_id
     return ET.tostring(root, encoding="unicode", xml_declaration=False)
 
 
