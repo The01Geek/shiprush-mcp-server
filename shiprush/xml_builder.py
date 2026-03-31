@@ -2,6 +2,19 @@ import xml.etree.ElementTree as ET
 
 from shiprush.models import Address, Package
 
+CARRIER_CODES = {
+    "ups": "0",
+    "fedex": "1",
+    "dhl": "2",
+    "usps": "3",
+    "endicia": "4",
+    "stamps": "5",
+}
+
+
+def _carrier_code(carrier: str) -> str:
+    return CARRIER_CODES.get(carrier.lower(), carrier)
+
 
 def _add_address_element(parent: ET.Element, tag: str, address: Address) -> None:
     wrapper = ET.SubElement(parent, tag)
@@ -40,7 +53,7 @@ def build_rate_request(
     ship_tx = ET.SubElement(root, "ShipTransaction")
     shipment = ET.SubElement(ship_tx, "Shipment")
     if carrier_filter:
-        ET.SubElement(shipment, "Carrier").text = carrier_filter
+        ET.SubElement(shipment, "Carrier").text = _carrier_code(carrier_filter)
     for pkg in packages:
         _add_package_element(shipment, pkg)
     _add_address_element(shipment, "ShipperAddress", origin)
@@ -62,8 +75,8 @@ def build_ship_request(
         order = ET.SubElement(ship_tx, "Order")
         ET.SubElement(order, "OrderNumber").text = reference
     shipment = ET.SubElement(ship_tx, "Shipment")
-    ET.SubElement(shipment, "Carrier").text = carrier
-    ET.SubElement(shipment, "ServiceType").text = service_name
+    ET.SubElement(shipment, "Carrier").text = _carrier_code(carrier)
+    ET.SubElement(shipment, "UPSServiceType").text = service_name
     for pkg in packages:
         _add_package_element(shipment, pkg)
     _add_address_element(shipment, "ShipperAddress", origin)
@@ -75,7 +88,7 @@ def build_void_request(tracking_number: str, carrier: str | None = None) -> str:
     root = ET.Element("VoidRequest")
     ET.SubElement(root, "TrackingNumber").text = tracking_number
     if carrier:
-        ET.SubElement(root, "Carrier").text = carrier
+        ET.SubElement(root, "Carrier").text = _carrier_code(carrier)
     return ET.tostring(root, encoding="unicode", xml_declaration=False)
 
 
