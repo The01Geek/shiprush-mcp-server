@@ -1,6 +1,6 @@
 # ShipRush MCP Server
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that wraps the [Descartes ShipRush](https://shiprush.com/) shipping API, enabling AI agents to automate multi-carrier shipping workflows. Built with [FastMCP](https://github.com/modelcontextprotocol/python-sdk) (Python) for deployment on [AWS Bedrock AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-mcp.html).
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that wraps the [Descartes ShipRush](https://shiprush.com/) shipping API, enabling AI agents to automate multi-carrier shipping workflows. Built with [FastMCP](https://github.com/modelcontextprotocol/python-sdk) (Python), deployable as a standalone service behind [AgentCore Gateway](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html) or directly on [AgentCore Runtime](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-mcp.html).
 
 ## Tools
 
@@ -149,45 +149,52 @@ Connect to `http://localhost:8000/mcp` and call `tools/list` to see all 4 tools.
 pytest tests/ -v
 ```
 
-## Deploying to AWS AgentCore Runtime
+## Deployment
 
-The server is designed for deployment as an ARM64 container on AgentCore Runtime. See [`docs/agentcore-deployment-guide.md`](docs/agentcore-deployment-guide.md) for the complete step-by-step guide.
+The server supports three deployment modes. See [`docs/agentcore-deployment-guide.md`](docs/agentcore-deployment-guide.md) for the complete step-by-step guide.
 
-**Quick version:**
+### Recommended: AgentCore Gateway + Standalone Server
+
+The preferred architecture for multi-product setups. The MCP server runs as a standalone service (App Runner, ECS, or any HTTPS endpoint), and AgentCore Gateway aggregates it with other MCP servers behind a single endpoint with IAM auth and semantic tool discovery.
+
+```
+Claude Code → (SigV4) → AgentCore Gateway → (HTTPS) → Standalone MCP Server → ShipRush API
+                              ↳ → Inventory MCP Server (future)
+                              ↳ → Warehouse MCP Server (future)
+```
+
+```bash
+# Build and deploy standalone server to App Runner
+docker build --platform linux/amd64 -t shiprush-mcp-standalone:latest \
+  -f .bedrock_agentcore/shiprush_mcp_server/Dockerfile .
+
+# Create Gateway and add the server as a target
+# (see docs/agentcore-deployment-guide.md for full boto3 steps)
+
+# Connect Claude Code to the Gateway
+claude mcp add shiprush-gateway -s project -- \
+  uvx mcp-proxy-for-aws@latest \
+  "https://YOUR-GATEWAY-ID.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp" \
+  --service bedrock-agentcore --region us-east-1
+```
+
+### Alternative: Direct AgentCore Runtime
+
+For single-server deployments where Gateway aggregation isn't needed:
 
 ```bash
 pip install bedrock-agentcore-starter-toolkit bedrock-agentcore
 
-# 1. Configure
 agentcore configure \
-  --entrypoint server.py \
-  --requirements-file requirements.txt \
-  --protocol MCP \
-  --name shiprush_mcp_server \
-  --deployment-type container \
-  --disable-memory --disable-otel \
-  --region us-east-1 \
-  --non-interactive
+  --entrypoint server.py --requirements-file requirements.txt \
+  --protocol MCP --name shiprush_mcp_server \
+  --deployment-type container --disable-memory --disable-otel \
+  --region us-east-1 --non-interactive
 
-# 2. Store ShipRush token in AgentCore Identity vault
-python -c "
-from bedrock_agentcore.services.identity import IdentityClient
-client = IdentityClient('us-east-1')
-client.create_api_key_credential_provider({'name': 'shiprush', 'apiKey': 'your-token'})
-"
-
-# 3. Create workload identity (authorizes the server to access the vault)
-agentcore identity create-workload-identity --name shiprush_mcp_server
-
-# 4. Deploy
 agentcore deploy --agent shiprush_mcp_server --env SHIPRUSH_ENV=production
-
-# 5. Verify (--user-id required for Identity vault access)
-agentcore invoke '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' --agent shiprush_mcp_server
-agentcore invoke '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_shipping_rates","arguments":{"origin_street1":"100 Main St","origin_city":"Seattle","origin_state":"WA","origin_postal_code":"98101","destination_street1":"200 Broadway","destination_city":"New York","destination_state":"NY","destination_postal_code":"10001","package_weight_lb":1.0}}}' --agent shiprush_mcp_server --user-id test-user
 ```
 
-The ShipRush token is stored securely in the AgentCore Identity vault (backed by AWS Secrets Manager) and fetched at runtime via workload identity — not passed as an environment variable. For local development, the server falls back to tokens in `.env`.
+The ShipRush token can be stored in the AgentCore Identity vault (backed by AWS Secrets Manager) or passed via environment variable.
 
 ### AgentCore Compliance
 

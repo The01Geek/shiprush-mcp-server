@@ -485,3 +485,329 @@ This removes the AgentCore Runtime. It preserves:
 - **IAM auth (default)** — requests are authenticated via SigV4. Add Cognito OAuth later for external consumers
 - **Base image** — `ghcr.io/astral-sh/uv:python3.13-bookworm-slim` (uses `uv` for fast dependency installs)
 - **Non-root** — container runs as user `bedrock_agentcore` (uid 1000)
+
+---
+
+## AgentCore Gateway Integration
+
+AgentCore Gateway provides a single MCP endpoint that aggregates tools from multiple backend MCP servers. This is the recommended architecture when you have more than one MCP server (e.g., ShipRush + inventory + warehouse systems), as it gives you unified tool discovery, semantic search, and centralized authentication.
+
+### Architecture
+
+```
+Claude Code / Agent
+    │ (IAM SigV4)
+    ▼
+AgentCore Gateway  ─── single MCP endpoint
+    │ (HTTPS)          (semantic tool discovery, IAM auth)
+    ▼
+Standalone MCP Server  ─── App Runner / ECS / any infrastructure
+    │ (HTTPS)               (each product team owns their deployment)
+    ▼
+ShipRush REST API
+```
+
+### Why Standalone Instead of Runtime-as-Target?
+
+We initially attempted to add the AgentCore Runtime (where the MCP server was already deployed) as a Gateway `mcpServer` target. This failed due to an authentication gap:
+
+- **Gateway outbound auth** for `mcpServer` targets only supports **OAuth2 or NoAuth** — not IAM/SigV4.
+- **AgentCore Runtime** requires SigV4 for its invocation endpoint.
+- The `GATEWAY_IAM_ROLE` credential provider type exists but is explicitly blocked for `mcpServer` targets (API validation error).
+- The OAuth/JWT workaround has a [known bug (issue #1030)](https://github.com/awslabs/amazon-bedrock-agentcore-samples/issues/1030) where JWT-authenticated requests reach the Runtime but are never forwarded to the container.
+
+We chose to deploy the MCP server as a **standalone service on AWS App Runner** for two reasons:
+
+1. **It works reliably** — the Gateway can reach a public HTTPS endpoint without the SigV4/IAM constraint.
+2. **It reflects a realistic enterprise pattern** — in a multi-product organization, each team (shipping, inventory, warehouse) would host their MCP server on their own infrastructure, not necessarily on AgentCore Runtime. The Gateway aggregates them all behind one endpoint.
+
+### Step-by-Step: Gateway + Standalone Server
+
+#### Prerequisites
+
+- An existing AgentCore deployment (Steps 1-5 above)
+- Docker installed locally (for building x86_64 images)
+- The ShipRush shipping token stored in AWS Secrets Manager
+
+#### 1. Create the Gateway
+
+```python
+import boto3
+
+client = boto3.client('bedrock-agentcore-control', region_name='us-east-1')
+
+gateway = client.create_gateway(
+    name='shiprush-gateway',
+    roleArn='arn:aws:iam::YOUR_ACCOUNT:role/AgentCoreGatewayExecutionRole',
+    protocolType='MCP',
+    authorizerType='AWS_IAM',
+    protocolConfiguration={
+        'mcp': {
+            'searchType': 'SEMANTIC'
+        }
+    }
+)
+
+print(f"Gateway URL: {gateway['gatewayUrl']}")
+print(f"Gateway ARN: {gateway['gatewayArn']}")
+```
+
+If you don't have a Gateway execution role, the `agentcore` CLI can create one:
+
+```bash
+# This auto-creates an IAM role and fails on gateway creation (expected),
+# but the role persists and can be used with boto3 above.
+PYTHONIOENCODING=utf-8 agentcore gateway create-mcp-gateway \
+  --name shiprush-gateway \
+  --region us-east-1
+```
+
+The Gateway role needs these policies:
+- `bedrock-agentcore:*` on `arn:aws:bedrock-agentcore:*:*:*`
+- `secretsmanager:GetSecretValue` on `*`
+- `lambda:InvokeFunction` on `arn:aws:lambda:*:*:function:*` (for Lambda targets)
+
+#### 2. Build and Push the x86_64 Docker Image
+
+The existing AgentCore image is ARM64 (Graviton). App Runner requires x86_64:
+
+```bash
+# Build for x86_64
+docker build --platform linux/amd64 \
+  -t shiprush-mcp-standalone:latest \
+  -f .bedrock_agentcore/shiprush_mcp_server/Dockerfile .
+
+# Login to ECR
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin \
+  YOUR_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com
+
+# Tag and push
+docker tag shiprush-mcp-standalone:latest \
+  YOUR_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-shiprush_mcp_server:standalone-amd64
+docker push \
+  YOUR_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-shiprush_mcp_server:standalone-amd64
+```
+
+#### 3. Store Secrets in AWS Secrets Manager
+
+```python
+import boto3
+
+sm = boto3.client('secretsmanager', region_name='us-east-1')
+
+# Store the ShipRush shipping token
+sm.create_secret(
+    Name='shiprush-mcp/shipping-token',
+    SecretString='your-shiprush-shipping-token'
+)
+```
+
+#### 4. Create IAM Roles for App Runner
+
+```python
+import boto3, json
+
+iam = boto3.client('iam')
+
+# ECR access role (for pulling images)
+iam.create_role(
+    RoleName='AppRunnerECRAccessRole',
+    AssumeRolePolicyDocument=json.dumps({
+        'Version': '2012-10-17',
+        'Statement': [{
+            'Effect': 'Allow',
+            'Principal': {'Service': 'build.apprunner.amazonaws.com'},
+            'Action': 'sts:AssumeRole'
+        }]
+    })
+)
+iam.attach_role_policy(
+    RoleName='AppRunnerECRAccessRole',
+    PolicyArn='arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess'
+)
+
+# Instance role (for Secrets Manager access)
+iam.create_role(
+    RoleName='AppRunnerShipRushInstanceRole',
+    AssumeRolePolicyDocument=json.dumps({
+        'Version': '2012-10-17',
+        'Statement': [{
+            'Effect': 'Allow',
+            'Principal': {'Service': 'tasks.apprunner.amazonaws.com'},
+            'Action': 'sts:AssumeRole'
+        }]
+    })
+)
+iam.put_role_policy(
+    RoleName='AppRunnerShipRushInstanceRole',
+    PolicyName='SecretsManagerAccess',
+    PolicyDocument=json.dumps({
+        'Version': '2012-10-17',
+        'Statement': [{
+            'Effect': 'Allow',
+            'Action': ['secretsmanager:GetSecretValue'],
+            'Resource': 'arn:aws:secretsmanager:us-east-1:YOUR_ACCOUNT:secret:shiprush-mcp/*'
+        }]
+    })
+)
+```
+
+#### 5. Deploy to App Runner
+
+```python
+import boto3
+
+apprunner = boto3.client('apprunner', region_name='us-east-1')
+
+service = apprunner.create_service(
+    ServiceName='shiprush-mcp-standalone',
+    SourceConfiguration={
+        'ImageRepository': {
+            'ImageIdentifier': 'YOUR_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-shiprush_mcp_server:standalone-amd64',
+            'ImageRepositoryType': 'ECR',
+            'ImageConfiguration': {
+                'Port': '8000',
+                'RuntimeEnvironmentVariables': {
+                    'DOCKER_CONTAINER': '1',
+                    'STANDALONE': '1',
+                    'SHIPRUSH_ENV': 'production',
+                    'PYTHONUNBUFFERED': '1',
+                },
+                'RuntimeEnvironmentSecrets': {
+                    'SHIPRUSH_SHIPPING_TOKEN_PRODUCTION': 'arn:aws:secretsmanager:us-east-1:YOUR_ACCOUNT:secret:shiprush-mcp/shipping-token-XXXXXX',
+                },
+            },
+        },
+        'AutoDeploymentsEnabled': False,
+        'AuthenticationConfiguration': {
+            'AccessRoleArn': 'arn:aws:iam::YOUR_ACCOUNT:role/AppRunnerECRAccessRole',
+        },
+    },
+    InstanceConfiguration={
+        'Cpu': '0.25 vCPU',
+        'Memory': '0.5 GB',
+        'InstanceRoleArn': 'arn:aws:iam::YOUR_ACCOUNT:role/AppRunnerShipRushInstanceRole',
+    },
+    HealthCheckConfiguration={
+        'Protocol': 'TCP',
+        'Interval': 10,
+        'Timeout': 5,
+        'HealthyThreshold': 1,
+        'UnhealthyThreshold': 5,
+    },
+)
+
+print(f"Service URL: https://{service['Service']['ServiceUrl']}")
+```
+
+Key environment variables:
+| Variable | Purpose |
+|----------|---------|
+| `DOCKER_CONTAINER=1` | Tells server.py to run uvicorn |
+| `STANDALONE=1` | Skips AgentCore Identity middleware |
+| `SHIPRUSH_ENV=production` | Points to production ShipRush API |
+| `SHIPRUSH_SHIPPING_TOKEN_PRODUCTION` | Token from Secrets Manager |
+
+#### 6. Add as Gateway Target
+
+```python
+import boto3
+
+client = boto3.client('bedrock-agentcore-control', region_name='us-east-1')
+
+target = client.create_gateway_target(
+    gatewayIdentifier='YOUR-GATEWAY-ID',
+    name='shiprush-mcp-server',
+    description='ShipRush MCP server (standalone on App Runner)',
+    targetConfiguration={
+        'mcp': {
+            'mcpServer': {
+                'endpoint': 'https://YOUR-APP-RUNNER-URL.us-east-1.awsapprunner.com/mcp'
+            }
+        }
+    }
+)
+```
+
+The Gateway automatically calls `tools/list` on the target to discover tools. Wait for the target status to be `READY`.
+
+#### 7. Connect Claude Code to the Gateway
+
+```bash
+claude mcp add shiprush-gateway -s project -- \
+  uvx mcp-proxy-for-aws@latest \
+  "https://YOUR-GATEWAY-ID.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp" \
+  --service bedrock-agentcore \
+  --region us-east-1
+```
+
+This creates a `.mcp.json`:
+```json
+{
+  "mcpServers": {
+    "shiprush-gateway": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "mcp-proxy-for-aws@latest",
+        "https://YOUR-GATEWAY-ID.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp",
+        "--service", "bedrock-agentcore",
+        "--region", "us-east-1"
+      ],
+      "env": {}
+    }
+  }
+}
+```
+
+#### 8. Adding Future Sister Products
+
+To add another MCP server (e.g., inventory) to the same Gateway:
+
+```python
+client.create_gateway_target(
+    gatewayIdentifier='YOUR-GATEWAY-ID',
+    name='inventory-mcp-server',
+    description='Inventory management MCP server',
+    targetConfiguration={
+        'mcp': {
+            'mcpServer': {
+                'endpoint': 'https://inventory-mcp.your-domain.com/mcp'
+            }
+        }
+    }
+)
+```
+
+Claude Code automatically discovers all tools from all targets through the single Gateway endpoint. The Gateway's semantic search tool helps agents find the right tool from a large catalog.
+
+### Gateway Security Note
+
+In this setup, the Gateway provides IAM-based inbound authentication (Claude Code → Gateway via SigV4). The Gateway-to-standalone-server connection currently uses NoAuth because `mcpServer` targets only support OAuth2 or NoAuth for outbound credentials.
+
+For production deployments, consider:
+- **OAuth2 outbound auth** — configure Cognito M2M credentials for Gateway → server communication
+- **Network-level security** — deploy the standalone server in a VPC and use VPC endpoints
+- **Gateway interceptors** — add Lambda interceptors for fine-grained access control, PII redaction, or audit logging
+
+### Gateway Cleanup
+
+```python
+import boto3
+
+client = boto3.client('bedrock-agentcore-control', region_name='us-east-1')
+
+# Delete target first
+client.delete_gateway_target(
+    gatewayIdentifier='YOUR-GATEWAY-ID',
+    targetId='YOUR-TARGET-ID'
+)
+
+# Then delete gateway
+client.delete_gateway(gatewayIdentifier='YOUR-GATEWAY-ID')
+
+# Delete App Runner service
+apprunner = boto3.client('apprunner', region_name='us-east-1')
+apprunner.delete_service(ServiceArn='YOUR-APP-RUNNER-SERVICE-ARN')
+```

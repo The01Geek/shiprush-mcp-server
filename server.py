@@ -1,9 +1,20 @@
-"""ShipRush MCP Server — exposes shipping tools over the Model Context Protocol."""
+"""ShipRush MCP Server — exposes shipping tools over the Model Context Protocol.
+
+Supports three deployment modes (controlled by environment variables):
+
+  1. Local dev:       No special env vars. Runs mcp.run() on localhost.
+  2. AgentCore Runtime: DOCKER_CONTAINER=1. Adds AgentCoreIdentityMiddleware
+                       to extract WorkloadAccessToken for vault-based token
+                       resolution.
+  3. Standalone:      DOCKER_CONTAINER=1 + STANDALONE=1. Adds ApiKeyMiddleware
+                       for Gateway-to-server auth. ShipRush token via env var.
+"""
 
 import logging
 import os
 
 from mcp.server.fastmcp import FastMCP
+from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from config import config
@@ -47,6 +58,29 @@ class AgentCoreIdentityMiddleware:
                     log.info("Set workload access token from request header")
                 except ImportError:
                     log.warning("bedrock_agentcore.runtime.context not available")
+        await self.app(scope, receive, send)
+
+
+class ApiKeyMiddleware:
+    """Validate X-API-Key header for standalone deployments behind AgentCore Gateway.
+
+    When MCP_API_KEY is set, every request must include a matching
+    X-API-Key header. This secures the standalone server so only the
+    Gateway (which injects the key via its credential provider) can call it.
+    """
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+        self._api_key = os.environ.get("MCP_API_KEY")
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and self._api_key:
+            headers = dict(scope.get("headers", []))
+            provided = headers.get(b"x-api-key")
+            if not provided or provided.decode("utf-8") != self._api_key:
+                response = PlainTextResponse("Unauthorized", status_code=401)
+                await response(scope, receive, send)
+                return
         await self.app(scope, receive, send)
 
 
@@ -164,12 +198,20 @@ async def void_shipment(
 
 
 if __name__ == "__main__":
-    # When running in AgentCore (DOCKER_CONTAINER=1), add middleware to
-    # extract WorkloadAccessToken for AgentCore Identity vault access.
     if os.environ.get("DOCKER_CONTAINER"):
         import uvicorn
+
         app = mcp.streamable_http_app()
-        app.add_middleware(AgentCoreIdentityMiddleware)
+
+        if os.environ.get("STANDALONE"):
+            # Standalone mode: behind AgentCore Gateway, validate API key.
+            app.add_middleware(ApiKeyMiddleware)
+            log.info("Starting in STANDALONE mode (API key auth)")
+        else:
+            # AgentCore Runtime mode: extract WorkloadAccessToken for vault.
+            app.add_middleware(AgentCoreIdentityMiddleware)
+            log.info("Starting in AgentCore Runtime mode (vault auth)")
+
         uvicorn.run(app, host="0.0.0.0", port=8000)
     else:
         mcp.run(transport="streamable-http")

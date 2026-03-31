@@ -1,11 +1,11 @@
 {
   "mcpServers": {
-    "shiprush-agentcore": {
+    "shiprush-gateway": {
       "type": "stdio",
       "command": "uvx",
       "args": [
         "mcp-proxy-for-aws@latest",
-        "https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/arn%3Aaws%3Abedrock-agentcore%3Aus-east-1%3A451650574475%3Aruntime%2Fshiprush_mcp_server-9Vs1426o3P/invocations?qualifier=DEFAULT",
+        "https://shiprush-gateway-t9isz5ioar.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp",
         "--service",
         "bedrock-agentcore",
         "--region",
