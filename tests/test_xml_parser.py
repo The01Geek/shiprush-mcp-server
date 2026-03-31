@@ -9,7 +9,7 @@ def test_parse_rate_response():
     xml_str = (FIXTURES / "rate_response.xml").read_text()
     rates = parse_rate_response(xml_str)
     assert len(rates) == 2
-    assert rates[0].carrier == "SR36232408"
+    assert rates[0].carrier == "17"  # ShipRushUSPS detected from USPSGNDADV
     assert rates[0].service_name == "USPS Ground Advantage"
     assert rates[0].service_code == "USPSGNDADV"
     assert rates[0].rate_amount == 12.27

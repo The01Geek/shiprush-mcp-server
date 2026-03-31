@@ -51,7 +51,7 @@ async def test_get_rates():
     with patch.object(client._http, "post", return_value=_mock_response(RATE_XML)) as mock_post:
         rates = await client.get_rates(ORIGIN, DEST, PACKAGES)
         assert len(rates) == 1
-        assert rates[0].carrier == "SR123"
+        assert rates[0].carrier == "17"  # ShipRushUSPS detected from U02 service code
         assert rates[0].rate_amount == 16.99
         mock_post.assert_called_once()
 

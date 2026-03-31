@@ -45,10 +45,12 @@ def parse_rate_response(xml_str: str) -> list[RateResult]:
     rates = []
     # RateShopping response uses AvailableService elements
     for svc in root.findall(".//AvailableService"):
+        service_code = _get_text(svc, "ServiceType")
+        carrier_code = _detect_carrier_code(service_code)
         rates.append(RateResult(
-            carrier=_get_text(svc, "ShippingAccountNumber") or _get_text(svc, "Carrier"),
+            carrier=carrier_code,
             service_name=_get_text(svc, "Name"),
-            service_code=_get_text(svc, "ServiceType"),
+            service_code=service_code,
             rate_amount=float(_get_text(svc, "Total", "0")),
             currency=_get_text(svc, "Currency", "USD"),
             estimated_delivery_date=_get_text(svc, "ExpectedDelivery") or None,
@@ -57,6 +59,20 @@ def parse_rate_response(xml_str: str) -> list[RateResult]:
             shipping_account_id=_get_text(svc, "ShippingAccountId") or None,
         ))
     return rates
+
+
+def _detect_carrier_code(service_code: str) -> str:
+    """Detect the ShipRush carrier code from the service type code."""
+    sc = service_code.upper()
+    if sc.startswith("USPS") or sc in ("U02", "U05", "U01"):
+        return "17"  # ShipRushUSPS
+    if sc.startswith("FEDEX") or sc.startswith("FDX"):
+        return "1"  # FedEx
+    if sc.startswith("UPS") or sc in ("01", "02", "03", "12", "13", "14", "59"):
+        return "0"  # UPS
+    if sc.startswith("DHL"):
+        return "2"  # DHL
+    return ""
 
 
 def parse_ship_response(xml_str: str) -> ShipmentResult:

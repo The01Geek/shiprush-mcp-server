@@ -9,6 +9,8 @@ CARRIER_CODES = {
     "usps": "3",
     "endicia": "4",
     "stamps": "5",
+    "shiprushusps": "17",
+    "17": "17",
 }
 
 
