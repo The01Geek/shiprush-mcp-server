@@ -1,0 +1,13 @@
+<ShipResponse>
+  <ShipTransaction>
+    <Shipment>
+      <TrackingNumber>794644790132</TrackingNumber>
+      <Carrier>FedEx</Carrier>
+      <ServiceType>FedExGround</ServiceType>
+      <ServiceDescription>FedEx Ground</ServiceDescription>
+      <ShippingCharges>12.50</ShippingCharges>
+      <Currency>USD</Currency>
+      <LabelUrl>https://labels.shiprush.com/abc123.pdf</LabelUrl>
+    </Shipment>
+  </ShipTransaction>
+</ShipResponse>

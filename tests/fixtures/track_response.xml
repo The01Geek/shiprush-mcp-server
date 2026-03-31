@@ -1,0 +1,22 @@
+<TrackResponse>
+  <ShipTransaction>
+    <Shipment>
+      <TrackingNumber>794644790132</TrackingNumber>
+      <Carrier>FedEx</Carrier>
+      <Status>In Transit</Status>
+      <EstimatedDelivery>2026-04-03</EstimatedDelivery>
+      <TrackingEvents>
+        <Event>
+          <Timestamp>2026-03-30T14:22:00Z</Timestamp>
+          <Location>Memphis, TN</Location>
+          <Description>Departed FedEx facility</Description>
+        </Event>
+        <Event>
+          <Timestamp>2026-03-30T08:00:00Z</Timestamp>
+          <Location>Seattle, WA</Location>
+          <Description>Picked up</Description>
+        </Event>
+      </TrackingEvents>
+    </Shipment>
+  </ShipTransaction>
+</TrackResponse>
