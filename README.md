@@ -151,25 +151,39 @@ pytest tests/ -v
 
 ## Deploying to AWS AgentCore Runtime
 
-The server is designed for deployment as an ARM64 container on AgentCore Runtime.
+The server is designed for deployment as an ARM64 container on AgentCore Runtime. See [`docs/agentcore-deployment-guide.md`](docs/agentcore-deployment-guide.md) for the complete step-by-step guide.
+
+**Quick version:**
 
 ```bash
-# Install the AgentCore toolkit
-pip install bedrock-agentcore-starter-toolkit
+pip install bedrock-agentcore-starter-toolkit bedrock-agentcore
 
-# Configure (generates Dockerfile, IAM roles, ECR repo)
+# 1. Configure
 agentcore configure \
   --entrypoint server.py \
   --requirements-file requirements.txt \
   --protocol MCP \
-  --name shiprush-mcp-server \
-  --deployment-type container
+  --name shiprush_mcp_server \
+  --deployment-type container \
+  --disable-memory --disable-otel \
+  --region us-east-1 \
+  --non-interactive
 
-# Deploy
-agentcore launch --agent shiprush-mcp-server
+# 2. Store ShipRush token in AgentCore Identity vault
+python -c "
+from bedrock_agentcore.services.identity import IdentityClient
+client = IdentityClient('us-east-1')
+client.create_api_key_credential_provider({'name': 'shiprush', 'apiKey': 'your-token'})
+"
+
+# 3. Deploy
+agentcore deploy --agent shiprush_mcp_server --env SHIPRUSH_ENV=production
+
+# 4. Verify
+agentcore invoke '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}'
 ```
 
-Set environment variables (`SHIPRUSH_SHIPPING_TOKEN_PRODUCTION`, `SHIPRUSH_ENV=production`) in the generated `.bedrock_agentcore.yaml`.
+The ShipRush token is stored securely in the AgentCore Identity vault (backed by AWS Secrets Manager) and fetched at runtime — not passed as an environment variable.
 
 ### AgentCore Compliance
 
@@ -187,7 +201,7 @@ Set environment variables (`SHIPRUSH_SHIPPING_TOKEN_PRODUCTION`, `SHIPRUSH_ENV=p
 ```
 ShipRush-MCP/
 ├── server.py              # FastMCP entry point (4 tools)
-├── config.py              # Environment config with .env support
+├── config.py              # Config: AgentCore Identity vault or .env fallback
 ├── requirements.txt
 ├── shiprush/
 │   ├── client.py          # Async HTTP client (httpx)

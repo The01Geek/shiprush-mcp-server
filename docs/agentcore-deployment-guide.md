@@ -145,16 +145,48 @@ agents:
 
 ---
 
-## Step 2: Deploy to AWS
+## Step 2: Store the ShipRush Token in AgentCore Identity
 
-Environment variables are passed via `--env` flags on the deploy command. **Do NOT hardcode tokens in the Dockerfile or `.bedrock_agentcore.yaml`** — those files may end up in ECR or version control.
+AgentCore Identity provides a secure vault (backed by AWS Secrets Manager) for API keys. The MCP server reads the token from this vault at runtime — no env vars or CLI flags needed.
+
+**Store the token via Python SDK:**
+
+```python
+from bedrock_agentcore.services.identity import IdentityClient
+
+client = IdentityClient("us-east-1")  # match your deployment region
+result = client.create_api_key_credential_provider({
+    "name": "shiprush",              # must match AGENTCORE_CREDENTIAL_NAME in config.py
+    "apiKey": "your-shiprush-shipping-token"
+})
+print("Created:", result["credentialProviderArn"])
+```
+
+**Verify in AWS Console:** Go to Amazon Bedrock > AgentCore > Identity tab. You should see the `shiprush` credential provider listed.
+
+**Why this is better than `--env` flags:**
+
+| | `--env` flag | AgentCore Identity |
+|---|---|---|
+| **Storage** | Container env var | AWS Secrets Manager vault |
+| **Visibility** | Shell history, process env | AWS Console Identity tab |
+| **Rotation** | Redeploy required | Update in console, no redeploy |
+| **Access control** | Anyone with container access | Scoped by workload identity |
+| **Audit** | None | CloudTrail |
+
+**How the server reads it at runtime:** The server's `config.py` uses the `@requires_api_key` decorator from the AgentCore SDK to fetch the token from the vault when running in AgentCore. When running locally, it falls back to environment variables from `.env`.
+
+---
+
+## Step 3: Deploy to AWS
 
 ```bash
 PYTHONIOENCODING=utf-8 agentcore deploy \
   --agent shiprush_mcp_server \
-  --env SHIPRUSH_ENV=production \
-  --env SHIPRUSH_SHIPPING_TOKEN_PRODUCTION=your-production-token-here
+  --env SHIPRUSH_ENV=production
 ```
+
+Note: `SHIPRUSH_ENV=production` tells the server which ShipRush base URL to use. The actual API token comes from AgentCore Identity, not from `--env`.
 
 **What happens:**
 1. Creates the IAM Execution Role (`AmazonBedrockAgentCoreSDKRuntime-us-east-1-{hash}`) with:
@@ -166,7 +198,7 @@ PYTHONIOENCODING=utf-8 agentcore deploy \
 5. CodeBuild builds the ARM64 Docker container (~25-60 seconds)
 6. Pushes the image to ECR
 7. Creates an AgentCore Runtime instance with the container
-8. Injects the `--env` variables as runtime environment variables
+8. At runtime, the server fetches the ShipRush token from AgentCore Identity vault
 9. Returns the runtime ARN
 
 **Expected output:**
@@ -186,7 +218,7 @@ Common issues:
 
 ---
 
-## Step 3: Verify the Deployment
+## Step 4: Verify the Deployment
 
 ### Option A: AWS CLI smoke test
 
@@ -245,7 +277,76 @@ asyncio.run(main())
 
 ---
 
-## Step 4: Integrate with Agents
+## Step 5: Connect Claude Code to the Deployed Server
+
+Claude Code can't speak SigV4 natively, so AWS provides [`mcp-proxy-for-aws`](https://github.com/aws/mcp-proxy-for-aws) — a local stdio proxy that signs requests with your AWS credentials and forwards them to AgentCore.
+
+**How it works:**
+```
+Claude Code  --stdio-->  mcp-proxy-for-aws  --SigV4/HTTPS-->  AgentCore Runtime
+                         (local proxy)                         (your MCP server)
+```
+
+### Step 4a: Construct the endpoint URL
+
+The URL format is:
+```
+https://bedrock-agentcore.{REGION}.amazonaws.com/runtimes/{ENCODED_ARN}/invocations?qualifier=DEFAULT
+```
+
+URL-encode the ARN (replace `:` with `%3A` and `/` with `%2F`):
+```bash
+ARN="arn:aws:bedrock-agentcore:us-east-1:YOUR_ACCOUNT:runtime/shiprush_mcp_server-XXXXX"
+ENCODED=$(echo "$ARN" | sed 's/:/%3A/g; s/\//%2F/g')
+ENDPOINT="https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/${ENCODED}/invocations?qualifier=DEFAULT"
+echo "$ENDPOINT"
+```
+
+### Step 4b: Add to Claude Code
+
+```bash
+claude mcp add shiprush-agentcore -s project -- \
+  uvx mcp-proxy-for-aws@latest \
+  "$ENDPOINT" \
+  --service bedrock-agentcore \
+  --region us-east-1
+```
+
+This creates a `.mcp.json` file in your project:
+```json
+{
+  "mcpServers": {
+    "shiprush-agentcore": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "mcp-proxy-for-aws@latest",
+        "https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/{ENCODED_ARN}/invocations?qualifier=DEFAULT",
+        "--service", "bedrock-agentcore",
+        "--region", "us-east-1"
+      ],
+      "env": {}
+    }
+  }
+}
+```
+
+### Step 4c: Restart Claude Code and test
+
+After adding, restart Claude Code (or start a new conversation). You should see `shiprush-agentcore` in the available MCP servers. Then you can ask Claude naturally:
+
+> "Get me shipping rates for a 2 lb package from 100 Main St, Seattle WA 98101 to 200 Broadway, New York NY 10001"
+
+Claude will call `get_shipping_rates` on your deployed AgentCore server and return the results.
+
+**Prerequisites:**
+- AWS credentials configured locally (`aws configure` or `AWS_PROFILE`)
+- `uvx` available (comes with `uv` — install via `pip install uv` if needed)
+- First run may take ~10 seconds as `uvx` downloads the proxy package
+
+---
+
+## Step 6: Integrate with Agents
 
 ### With Strands Agent (recommended for AgentCore)
 
@@ -297,11 +398,10 @@ To push a new version of the server after code changes:
 PYTHONIOENCODING=utf-8 agentcore deploy \
   --agent shiprush_mcp_server \
   --auto-update-on-conflict \
-  --env SHIPRUSH_ENV=production \
-  --env SHIPRUSH_SHIPPING_TOKEN_PRODUCTION=your-production-token-here
+  --env SHIPRUSH_ENV=production
 ```
 
-The `--auto-update-on-conflict` flag updates the existing runtime instead of failing with a conflict error.
+The `--auto-update-on-conflict` flag updates the existing runtime instead of failing with a conflict error. The ShipRush token doesn't need to be passed again — it's stored in AgentCore Identity.
 
 ---
 
@@ -341,8 +441,9 @@ This removes the AgentCore Runtime. It preserves:
 - Verify the server starts locally: `python server.py`
 
 ### "Shipping token not found" from tools
-- The `--env` flags weren't passed during deploy
-- Redeploy with the correct `--env` values
+- The credential provider wasn't created in AgentCore Identity
+- Run the Python SDK snippet from Step 2 to create it
+- Or fall back to `--env SHIPRUSH_SHIPPING_TOKEN_PRODUCTION=your-token` during deploy
 
 ### Platform mismatch warning
 - Expected on Windows/x86 machines
