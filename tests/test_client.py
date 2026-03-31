@@ -5,6 +5,16 @@ from shiprush.client import ShipRushClient
 from shiprush.models import Address, Package
 
 
+class _MockConfig:
+    """Mock config for tests with static token and base_url."""
+    def __init__(self, token: str, base_url: str):
+        self.shipping_token = token
+        self.base_url = base_url
+
+    async def get_shipping_token(self) -> str:
+        return self.shipping_token
+
+
 ORIGIN = Address(street1="100 Main St", city="Seattle", state="WA", postal_code="98101", country="US")
 DEST = Address(street1="200 Oak Ave", city="Portland", state="OR", postal_code="97201", country="US")
 PACKAGES = [Package(weight_lb=2.5)]
@@ -47,7 +57,7 @@ def _mock_response(text: str, status_code: int = 200):
 
 @pytest.mark.asyncio
 async def test_get_rates():
-    client = ShipRushClient(token="test-token", base_url="https://sandbox.api.my.shiprush.com")
+    client = ShipRushClient(config=_MockConfig("test-token", "https://sandbox.api.my.shiprush.com"))
     with patch.object(client._http, "post", return_value=_mock_response(RATE_XML)) as mock_post:
         rates = await client.get_rates(ORIGIN, DEST, PACKAGES)
         assert len(rates) == 1
@@ -58,7 +68,7 @@ async def test_get_rates():
 
 @pytest.mark.asyncio
 async def test_create_shipment():
-    client = ShipRushClient(token="test-token", base_url="https://sandbox.api.my.shiprush.com")
+    client = ShipRushClient(config=_MockConfig("test-token", "https://sandbox.api.my.shiprush.com"))
     with patch.object(client._http, "post", return_value=_mock_response(SHIP_XML)) as mock_post:
         result = await client.create_shipment(ORIGIN, DEST, PACKAGES, "rate_abc123")
         assert result.shipment_id == "448ecd71-test"
@@ -68,7 +78,7 @@ async def test_create_shipment():
 
 @pytest.mark.asyncio
 async def test_track_shipment():
-    client = ShipRushClient(token="test-token", base_url="https://sandbox.api.my.shiprush.com")
+    client = ShipRushClient(config=_MockConfig("test-token", "https://sandbox.api.my.shiprush.com"))
     with patch.object(client._http, "post", return_value=_mock_response(TRACK_XML)):
         result = await client.track_shipment("448ecd71-test")
         assert result.status == "Delivered"
@@ -76,7 +86,7 @@ async def test_track_shipment():
 
 @pytest.mark.asyncio
 async def test_void_shipment():
-    client = ShipRushClient(token="test-token", base_url="https://sandbox.api.my.shiprush.com")
+    client = ShipRushClient(config=_MockConfig("test-token", "https://sandbox.api.my.shiprush.com"))
     with patch.object(client._http, "post", return_value=_mock_response(VOID_XML)):
         result = await client.void_shipment("448ecd71-test")
         assert result.voided is True
@@ -86,7 +96,7 @@ async def test_void_shipment():
 
 @pytest.mark.asyncio
 async def test_client_sends_auth_header():
-    client = ShipRushClient(token="my-secret-token", base_url="https://sandbox.api.my.shiprush.com")
+    client = ShipRushClient(config=_MockConfig("my-secret-token", "https://sandbox.api.my.shiprush.com"))
     with patch.object(client._http, "post", return_value=_mock_response(RATE_XML)) as mock_post:
         await client.get_rates(ORIGIN, DEST, PACKAGES)
         call_kwargs = mock_post.call_args
@@ -96,7 +106,7 @@ async def test_client_sends_auth_header():
 
 @pytest.mark.asyncio
 async def test_client_http_500_raises():
-    client = ShipRushClient(token="test-token", base_url="https://sandbox.api.my.shiprush.com")
+    client = ShipRushClient(config=_MockConfig("test-token", "https://sandbox.api.my.shiprush.com"))
     error_resp = AsyncMock()
     error_resp.status_code = 500
     error_resp.text = "Internal Server Error"

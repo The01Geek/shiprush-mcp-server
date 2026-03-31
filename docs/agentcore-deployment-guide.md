@@ -145,11 +145,11 @@ agents:
 
 ---
 
-## Step 2: Store the ShipRush Token in AgentCore Identity
+## Step 2: Store the ShipRush Token and Create Workload Identity
 
-AgentCore Identity provides a secure vault (backed by AWS Secrets Manager) for API keys. The MCP server reads the token from this vault at runtime — no env vars or CLI flags needed.
+AgentCore Identity provides a secure vault (backed by AWS Secrets Manager) for API keys, and a workload identity system that authorizes your server to access them.
 
-**Store the token via Python SDK:**
+### Step 2a: Store the API key
 
 ```python
 from bedrock_agentcore.services.identity import IdentityClient
@@ -164,6 +164,28 @@ print("Created:", result["credentialProviderArn"])
 
 **Verify in AWS Console:** Go to Amazon Bedrock > AgentCore > Identity tab. You should see the `shiprush` credential provider listed.
 
+### Step 2b: Create a workload identity
+
+The workload identity is a named entity that represents your MCP server. When AgentCore Runtime receives a request, it generates a workload access token using this identity, which the server uses to fetch the API key from the vault.
+
+```bash
+PYTHONIOENCODING=utf-8 agentcore identity create-workload-identity \
+  --name shiprush_mcp_server
+```
+
+This registers the identity in AgentCore and saves it to `.bedrock_agentcore.yaml`.
+
+**How the full chain works at runtime:**
+```
+Client request (with user-id) → AgentCore Runtime
+  → Runtime fetches workload identity for the agent
+  → Runtime calls GetWorkloadAccessTokenForUserId
+  → Runtime injects WorkloadAccessToken header into container request
+  → AgentCoreIdentityMiddleware (server.py) extracts the header
+  → @requires_api_key decorator uses the token to call GetResourceApiKey
+  → Decrypted ShipRush API key is returned to the server
+```
+
 **Why this is better than `--env` flags:**
 
 | | `--env` flag | AgentCore Identity |
@@ -174,7 +196,7 @@ print("Created:", result["credentialProviderArn"])
 | **Access control** | Anyone with container access | Scoped by workload identity |
 | **Audit** | None | CloudTrail |
 
-**How the server reads it at runtime:** The server's `config.py` uses the `@requires_api_key` decorator from the AgentCore SDK to fetch the token from the vault when running in AgentCore. When running locally, it falls back to environment variables from `.env`.
+**Fallback:** If the vault fetch fails (no workload identity, or caller didn't provide a user-id), the server falls back to the `SHIPRUSH_SHIPPING_TOKEN_PRODUCTION` env var if one was passed via `--env`.
 
 ---
 
@@ -220,24 +242,24 @@ Common issues:
 
 ## Step 4: Verify the Deployment
 
-### Option A: AWS CLI smoke test
+### Option A: agentcore invoke (recommended)
 
 ```bash
-export SERVER_ARN="arn:aws:bedrock-agentcore:us-east-1:YOUR_ACCOUNT:runtime/shiprush_mcp_server-xxxxx"
+# List tools (no user-id needed for tools/list)
+PYTHONIOENCODING=utf-8 agentcore invoke \
+  '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' \
+  --agent shiprush_mcp_server
 
-# List tools
-aws bedrock-agentcore invoke-agent-runtime \
-  --agent-runtime-arn $SERVER_ARN \
-  --content-type "application/json" \
-  --accept "application/json, text/event-stream" \
-  --payload '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' \
-  --region us-east-1 \
-  output.txt
-
-cat output.txt
+# Test rate shopping (requires --user-id for Identity vault access)
+PYTHONIOENCODING=utf-8 agentcore invoke \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_shipping_rates","arguments":{"origin_street1":"100 Main St","origin_city":"Seattle","origin_state":"WA","origin_postal_code":"98101","destination_street1":"200 Broadway","destination_city":"New York","destination_state":"NY","destination_postal_code":"10001","package_weight_lb":1.0}}}' \
+  --agent shiprush_mcp_server \
+  --user-id test-user
 ```
 
-Expected: JSON listing 4 tools (get_shipping_rates, create_shipment, track_shipment, void_shipment)
+**Important:** The `--user-id` flag is required for tool calls that access the Identity vault. Without it, AgentCore Runtime won't generate the workload access token, and the token fetch will fail.
+
+Expected: JSON with shipping rates ($9.46, $12.48, $51.65 for USPS services)
 
 ### Option B: MCP Inspector
 

@@ -1,8 +1,10 @@
 """ShipRush MCP Server — exposes shipping tools over the Model Context Protocol."""
 
 import logging
+import os
 
 from mcp.server.fastmcp import FastMCP
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from config import config
 from shiprush.client import ShipRushClient
@@ -10,6 +12,43 @@ from shiprush.models import Address, Package
 from shiprush.xml_parser import ShipRushApiError
 
 log = logging.getLogger(__name__)
+
+
+class AgentCoreIdentityMiddleware:
+    """Extract WorkloadAccessToken header from AgentCore Runtime requests.
+
+    AgentCore Runtime injects this header on every invocation. FastMCP's
+    Starlette app doesn't read it, so this middleware bridges the gap by
+    storing it in BedrockAgentCoreContext for the @requires_api_key decorator.
+    """
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            headers = dict(scope.get("headers", []))
+            # ASGI headers are lowercase bytes
+            token = headers.get(b"workloadaccesstoken")
+            if not token:
+                # Log all headers to diagnose which header name Runtime uses
+                header_names = [k.decode("utf-8", errors="replace") for k, _ in scope.get("headers", [])]
+                log.warning("No workloadaccesstoken header. Available headers: %s", header_names)
+                # Try alternative header names
+                for key in (b"workload-access-token", b"x-workload-access-token", b"workload_access_token"):
+                    token = headers.get(key)
+                    if token:
+                        log.info("Found workload token in header: %s", key)
+                        break
+            if token:
+                try:
+                    from bedrock_agentcore.runtime.context import BedrockAgentCoreContext
+                    BedrockAgentCoreContext.set_workload_access_token(token.decode("utf-8"))
+                    log.info("Set workload access token from request header")
+                except ImportError:
+                    log.warning("bedrock_agentcore.runtime.context not available")
+        await self.app(scope, receive, send)
+
 
 # Binds to 0.0.0.0 for container deployment (AgentCore Runtime).
 # Stateless mode — no session persistence, simplest AgentCore path.
@@ -19,7 +58,7 @@ mcp = FastMCP(
     stateless_http=True,
 )
 
-client = ShipRushClient(token=config.shipping_token, base_url=config.base_url)
+client = ShipRushClient(config=config)
 
 
 @mcp.tool()
@@ -125,4 +164,12 @@ async def void_shipment(
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    # When running in AgentCore (DOCKER_CONTAINER=1), add middleware to
+    # extract WorkloadAccessToken for AgentCore Identity vault access.
+    if os.environ.get("DOCKER_CONTAINER"):
+        import uvicorn
+        app = mcp.streamable_http_app()
+        app.add_middleware(AgentCoreIdentityMiddleware)
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    else:
+        mcp.run(transport="streamable-http")

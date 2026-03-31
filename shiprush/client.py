@@ -1,5 +1,9 @@
 """Async HTTP client for the ShipRush REST API."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import httpx
 
 from shiprush.models import (
@@ -23,28 +27,36 @@ from shiprush.xml_parser import (
     parse_void_response,
 )
 
+if TYPE_CHECKING:
+    from config import ShipRushConfig
+
 
 class ShipRushClient:
-    """Wraps ShipRush REST API endpoints with XML serialization."""
+    """Wraps ShipRush REST API endpoints with XML serialization.
 
-    def __init__(self, token: str, base_url: str):
-        self._token = token
-        self._base_url = base_url
+    Accepts a config object so the token is resolved per-request via the
+    config.shipping_token property (supports both env vars and AgentCore
+    Identity vault).
+    """
+
+    def __init__(self, config: ShipRushConfig):
+        self._config = config
         self._http = httpx.AsyncClient(timeout=30.0)
 
     async def close(self) -> None:
         await self._http.aclose()
 
-    @property
-    def _headers(self) -> dict[str, str]:
+    async def _get_headers(self) -> dict[str, str]:
+        token = await self._config.get_shipping_token()
         return {
-            "X-SHIPRUSH-SHIPPING-TOKEN": self._token,
+            "X-SHIPRUSH-SHIPPING-TOKEN": token,
             "Content-Type": "application/xml",
         }
 
     async def _post(self, path: str, body: str) -> str:
-        url = f"{self._base_url}{path}"
-        response = await self._http.post(url, content=body, headers=self._headers)
+        url = f"{self._config.base_url}{path}"
+        headers = await self._get_headers()
+        response = await self._http.post(url, content=body, headers=headers)
         response.raise_for_status()
         return response.text
 
