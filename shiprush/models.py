@@ -1,3 +1,5 @@
+"""Pydantic models for ShipRush API inputs and outputs."""
+
 from pydantic import BaseModel
 
 

@@ -1,7 +1,8 @@
+"""Parse ShipRush XML API responses into Pydantic models."""
+
 import xml.etree.ElementTree as ET
 
 from shiprush.models import (
-    Address,
     RateResult,
     ShipmentResult,
     TrackingEvent,
@@ -33,7 +34,7 @@ def _check_errors(root: ET.Element) -> None:
         for msg_el in root.findall(".//ShippingMessage"):
             severity = _get_text(msg_el, "Severity")
             text = _get_text(msg_el, "Text")
-            if severity == "error" and text:
+            if severity.lower() == "error" and text:
                 errors.append(text)
         if errors:
             raise ShipRushApiError(errors)

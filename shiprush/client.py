@@ -1,3 +1,5 @@
+"""Async HTTP client for the ShipRush REST API."""
+
 import httpx
 
 from shiprush.models import (
@@ -11,6 +13,7 @@ from shiprush.models import (
 from shiprush.xml_builder import (
     build_rate_request,
     build_ship_request,
+    build_tracking_request,
     build_void_request,
 )
 from shiprush.xml_parser import (
@@ -22,10 +25,15 @@ from shiprush.xml_parser import (
 
 
 class ShipRushClient:
+    """Wraps ShipRush REST API endpoints with XML serialization."""
+
     def __init__(self, token: str, base_url: str):
         self._token = token
         self._base_url = base_url
         self._http = httpx.AsyncClient(timeout=30.0)
+
+    async def close(self) -> None:
+        await self._http.aclose()
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -67,7 +75,6 @@ class ShipRushClient:
         return parse_ship_response(response_xml)
 
     async def track_shipment(self, shipment_id: str) -> TrackingResult:
-        from shiprush.xml_builder import build_tracking_request
         xml = build_tracking_request(shipment_id)
         response_xml = await self._post("/shipmentservice.svc/shipment/tracking", xml)
         return parse_track_response(response_xml)
@@ -76,4 +83,3 @@ class ShipRushClient:
         xml = build_void_request(shipment_id)
         response_xml = await self._post("/shipmentservice.svc/shipment/void", xml)
         return parse_void_response(response_xml)
-

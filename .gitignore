@@ -9,3 +9,4 @@ build/
 .bedrock_agentcore/
 .bedrock_agentcore.yaml
 .pytest_cache/
+.claude/
