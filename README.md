@@ -95,7 +95,11 @@ The ShipRush API uses numeric enum values for carriers (e.g., `0` = UPS, `1` = F
 
 The server uses the `/shipment/rateshopping` endpoint (not `/shipment/rate`). Rate shopping returns rates across **all configured carriers** in one call, which is more useful for agents. Single-carrier rating requires specifying a carrier upfront and returns only one result.
 
-## Setup
+## Connecting to a Deployed Server
+
+If someone has already deployed the ShipRush MCP server and you just want to **use it** from Claude Code, Claude Desktop, or another MCP client, see [`docs/installation-guide.md`](docs/installation-guide.md).
+
+## Setup (for developers)
 
 ### Prerequisites
 
