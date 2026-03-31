@@ -176,14 +176,18 @@ client = IdentityClient('us-east-1')
 client.create_api_key_credential_provider({'name': 'shiprush', 'apiKey': 'your-token'})
 "
 
-# 3. Deploy
+# 3. Create workload identity (authorizes the server to access the vault)
+agentcore identity create-workload-identity --name shiprush_mcp_server
+
+# 4. Deploy
 agentcore deploy --agent shiprush_mcp_server --env SHIPRUSH_ENV=production
 
-# 4. Verify
-agentcore invoke '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}'
+# 5. Verify (--user-id required for Identity vault access)
+agentcore invoke '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' --agent shiprush_mcp_server
+agentcore invoke '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_shipping_rates","arguments":{"origin_street1":"100 Main St","origin_city":"Seattle","origin_state":"WA","origin_postal_code":"98101","destination_street1":"200 Broadway","destination_city":"New York","destination_state":"NY","destination_postal_code":"10001","package_weight_lb":1.0}}}' --agent shiprush_mcp_server --user-id test-user
 ```
 
-The ShipRush token is stored securely in the AgentCore Identity vault (backed by AWS Secrets Manager) and fetched at runtime — not passed as an environment variable.
+The ShipRush token is stored securely in the AgentCore Identity vault (backed by AWS Secrets Manager) and fetched at runtime via workload identity — not passed as an environment variable. For local development, the server falls back to tokens in `.env`.
 
 ### AgentCore Compliance
 
