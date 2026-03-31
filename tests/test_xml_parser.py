@@ -43,7 +43,7 @@ def test_parse_void_response():
     result = parse_void_response(xml_str)
     assert result.tracking_number == "794644790132"
     assert result.voided is True
-    assert result.message == "Shipment successfully voided"
+    assert result.message is None
 
 
 def test_parse_address_validate_response():

@@ -92,9 +92,15 @@ def parse_track_response(xml_str: str) -> TrackingResult:
 def parse_void_response(xml_str: str) -> VoidResult:
     root = ET.fromstring(xml_str)
     _check_errors(root)
+    # Real API uses <IsSuccess> and <ShipTransaction><Shipment><TrackingNumber>
+    shipment = root.find(".//Shipment")
+    tracking = _get_text(shipment, "TrackingNumber") if shipment is not None else ""
+    is_success = _get_text(root, "IsSuccess", "false").lower() == "true"
+    # Also check legacy format
+    voided = is_success or _get_text(root, "Voided", "false").lower() == "true"
     return VoidResult(
-        tracking_number=_get_text(root, "TrackingNumber"),
-        voided=_get_text(root, "Voided", "false").lower() == "true",
+        tracking_number=tracking or _get_text(root, "TrackingNumber"),
+        voided=voided,
         message=_get_text(root, "Message") or None,
     )
 

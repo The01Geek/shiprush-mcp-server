@@ -84,11 +84,21 @@ def build_ship_request(
     return ET.tostring(root, encoding="unicode", xml_declaration=False)
 
 
+def build_tracking_request(tracking_number: str) -> str:
+    root = ET.Element("TrackingRequest")
+    ship_tx = ET.SubElement(root, "ShipTransaction")
+    shipment = ET.SubElement(ship_tx, "Shipment")
+    ET.SubElement(shipment, "TrackingNumber").text = tracking_number
+    return ET.tostring(root, encoding="unicode", xml_declaration=False)
+
+
 def build_void_request(tracking_number: str, carrier: str | None = None) -> str:
     root = ET.Element("VoidRequest")
-    ET.SubElement(root, "TrackingNumber").text = tracking_number
+    ship_tx = ET.SubElement(root, "ShipTransaction")
+    shipment = ET.SubElement(ship_tx, "Shipment")
+    ET.SubElement(shipment, "TrackingNumber").text = tracking_number
     if carrier:
-        ET.SubElement(root, "Carrier").text = _carrier_code(carrier)
+        ET.SubElement(shipment, "Carrier").text = _carrier_code(carrier)
     return ET.tostring(root, encoding="unicode", xml_declaration=False)
 
 

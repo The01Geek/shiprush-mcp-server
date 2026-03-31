@@ -90,8 +90,9 @@ def test_build_void_request():
     xml_str = build_void_request("794644790132", carrier="FedEx")
     root = ET.fromstring(xml_str)
     assert root.tag == "VoidRequest"
-    assert root.find("TrackingNumber").text == "794644790132"
-    assert root.find("Carrier").text == "1"  # FedEx maps to carrier code 1
+    shipment = root.find("ShipTransaction/Shipment")
+    assert shipment.find("TrackingNumber").text == "794644790132"
+    assert shipment.find("Carrier").text == "1"  # FedEx maps to carrier code 1
 
 
 def test_build_address_validate_request():

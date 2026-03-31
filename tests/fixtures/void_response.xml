@@ -1,5 +1,9 @@
 <VoidResponse>
-  <TrackingNumber>794644790132</TrackingNumber>
-  <Voided>true</Voided>
-  <Message>Shipment successfully voided</Message>
+  <Messages />
+  <IsSuccess>true</IsSuccess>
+  <ShipTransaction>
+    <Shipment>
+      <TrackingNumber>794644790132</TrackingNumber>
+    </Shipment>
+  </ShipTransaction>
 </VoidResponse>

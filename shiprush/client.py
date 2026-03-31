@@ -72,11 +72,9 @@ class ShipRushClient:
         tracking_number: str,
         carrier: str | None = None,
     ) -> TrackingResult:
-        xml = f"<TrackRequest><TrackingNumber>{tracking_number}</TrackingNumber>"
-        if carrier:
-            xml += f"<Carrier>{carrier}</Carrier>"
-        xml += "</TrackRequest>"
-        response_xml = await self._post("/shipmentservice.svc/shipment/track", xml)
+        from shiprush.xml_builder import build_tracking_request
+        xml = build_tracking_request(tracking_number)
+        response_xml = await self._post("/shipmentservice.svc/shipment/tracking", xml)
         return parse_track_response(response_xml)
 
     async def void_shipment(

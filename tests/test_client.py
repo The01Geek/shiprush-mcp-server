@@ -28,8 +28,9 @@ TRACK_XML = """<TrackResponse><ShipTransaction><Shipment>
 <Description>Delivered</Description></Event></TrackingEvents>
 </Shipment></ShipTransaction></TrackResponse>"""
 
-VOID_XML = """<VoidResponse><TrackingNumber>794644790132</TrackingNumber>
-<Voided>true</Voided><Message>Voided</Message></VoidResponse>"""
+VOID_XML = """<VoidResponse><Messages /><IsSuccess>true</IsSuccess>
+<ShipTransaction><Shipment><TrackingNumber>794644790132</TrackingNumber>
+</Shipment></ShipTransaction></VoidResponse>"""
 
 ADDR_XML = """<AddressValidateResponse><Valid>true</Valid>
 <CorrectedAddress><Address><Address1>100 MAIN ST</Address1>
