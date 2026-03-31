@@ -10,10 +10,12 @@ DEST = Address(street1="200 Oak Ave", city="Portland", state="OR", postal_code="
 PACKAGES = [Package(weight_lb=2.5)]
 
 # Sample XML responses for mocking HTTP calls
-RATE_XML = """<RateResponse><ShipTransaction><Shipment><RateDetails>
-<Rate><Carrier>FedEx</Carrier><ServiceType>FedExGround</ServiceType>
-<ServiceDescription>FedEx Ground</ServiceDescription><TotalCharges>12.50</TotalCharges>
-<Currency>USD</Currency></Rate></RateDetails></Shipment></ShipTransaction></RateResponse>"""
+RATE_XML = """<RateShoppingResponse><IsSuccess>true</IsSuccess><AvailableServices>
+<AvailableService><ShippingAccountNumber>SR123</ShippingAccountNumber>
+<Name>USPS Priority</Name><ServiceType>U02</ServiceType>
+<Total>16.99</Total><Currency>USD</Currency>
+<TimeInTransitBusinessDays>2</TimeInTransitBusinessDays>
+</AvailableService></AvailableServices></RateShoppingResponse>"""
 
 SHIP_XML = """<ShipResponse><ShipTransaction><Shipment>
 <TrackingNumber>794644790132</TrackingNumber><Carrier>FedEx</Carrier>
@@ -48,8 +50,8 @@ async def test_get_rates():
     with patch.object(client._http, "post", return_value=_mock_response(RATE_XML)) as mock_post:
         rates = await client.get_rates(ORIGIN, DEST, PACKAGES)
         assert len(rates) == 1
-        assert rates[0].carrier == "FedEx"
-        assert rates[0].rate_amount == 12.50
+        assert rates[0].carrier == "SR123"
+        assert rates[0].rate_amount == 16.99
         mock_post.assert_called_once()
 
 

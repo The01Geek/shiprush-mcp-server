@@ -48,7 +48,7 @@ class ShipRushClient:
         carrier_filter: str | None = None,
     ) -> list[RateResult]:
         xml = build_rate_request(origin, destination, packages, carrier_filter)
-        response_xml = await self._post("/shipmentservice.svc/shipment/rate", xml)
+        response_xml = await self._post("/shipmentservice.svc/shipment/rateshopping", xml)
         return parse_rate_response(response_xml)
 
     async def create_shipment(

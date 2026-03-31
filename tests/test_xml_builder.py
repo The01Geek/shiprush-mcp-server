@@ -29,7 +29,7 @@ PACKAGES = [Package(weight_lb=2.5, length_in=10, width_in=8, height_in=4)]
 def test_build_rate_request_structure():
     xml_str = build_rate_request(ORIGIN, DESTINATION, PACKAGES)
     root = ET.fromstring(xml_str)
-    assert root.tag == "RateRequest"
+    assert root.tag == "RateShoppingRequest"
     ship_tx = root.find("ShipTransaction")
     assert ship_tx is not None
     shipment = ship_tx.find("Shipment")

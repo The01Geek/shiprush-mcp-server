@@ -22,9 +22,12 @@ class Package(BaseModel):
 class RateResult(BaseModel):
     carrier: str
     service_name: str
+    service_code: str | None = None
     rate_amount: float
     currency: str
     estimated_delivery_date: str | None = None
+    transit_days: int | None = None
+    quote_id: str | None = None
 
 
 class ShipmentResult(BaseModel):

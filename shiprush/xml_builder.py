@@ -49,7 +49,7 @@ def build_rate_request(
     packages: list[Package],
     carrier_filter: str | None = None,
 ) -> str:
-    root = ET.Element("RateRequest")
+    root = ET.Element("RateShoppingRequest")
     ship_tx = ET.SubElement(root, "ShipTransaction")
     shipment = ET.SubElement(ship_tx, "Shipment")
     if carrier_filter:

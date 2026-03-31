@@ -9,13 +9,15 @@ def test_parse_rate_response():
     xml_str = (FIXTURES / "rate_response.xml").read_text()
     rates = parse_rate_response(xml_str)
     assert len(rates) == 2
-    assert rates[0].carrier == "FedEx"
-    assert rates[0].service_name == "FedEx Ground"
-    assert rates[0].rate_amount == 12.50
+    assert rates[0].carrier == "SR36232408"
+    assert rates[0].service_name == "USPS Ground Advantage"
+    assert rates[0].service_code == "USPSGNDADV"
+    assert rates[0].rate_amount == 12.27
     assert rates[0].currency == "USD"
-    assert rates[0].estimated_delivery_date == "2026-04-03"
-    assert rates[1].carrier == "UPS"
-    assert rates[1].rate_amount == 11.75
+    assert rates[0].transit_days == 4
+    assert rates[0].quote_id == "rate_abc123"
+    assert rates[1].service_name == "USPS Priority"
+    assert rates[1].rate_amount == 16.99
 
 
 def test_parse_ship_response():

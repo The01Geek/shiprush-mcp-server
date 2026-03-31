@@ -43,13 +43,17 @@ def parse_rate_response(xml_str: str) -> list[RateResult]:
     root = ET.fromstring(xml_str)
     _check_errors(root)
     rates = []
-    for rate_el in root.findall(".//Rate"):
+    # RateShopping response uses AvailableService elements
+    for svc in root.findall(".//AvailableService"):
         rates.append(RateResult(
-            carrier=_get_text(rate_el, "Carrier"),
-            service_name=_get_text(rate_el, "ServiceDescription"),
-            rate_amount=float(_get_text(rate_el, "TotalCharges", "0")),
-            currency=_get_text(rate_el, "Currency", "USD"),
-            estimated_delivery_date=_get_text(rate_el, "EstimatedDeliveryDate") or None,
+            carrier=_get_text(svc, "ShippingAccountNumber") or _get_text(svc, "Carrier"),
+            service_name=_get_text(svc, "Name"),
+            service_code=_get_text(svc, "ServiceType"),
+            rate_amount=float(_get_text(svc, "Total", "0")),
+            currency=_get_text(svc, "Currency", "USD"),
+            estimated_delivery_date=_get_text(svc, "ExpectedDelivery") or None,
+            transit_days=int(_get_text(svc, "TimeInTransitBusinessDays", "0")) or None,
+            quote_id=_get_text(svc, "ShipmentQuoteId") or None,
         ))
     return rates
 

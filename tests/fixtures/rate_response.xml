@@ -1,24 +1,27 @@
-<RateResponse>
-  <ShipTransaction>
-    <Shipment>
-      <RateDetails>
-        <Rate>
-          <Carrier>FedEx</Carrier>
-          <ServiceType>FedExGround</ServiceType>
-          <ServiceDescription>FedEx Ground</ServiceDescription>
-          <TotalCharges>12.50</TotalCharges>
-          <Currency>USD</Currency>
-          <EstimatedDeliveryDate>2026-04-03</EstimatedDeliveryDate>
-        </Rate>
-        <Rate>
-          <Carrier>UPS</Carrier>
-          <ServiceType>UPSGround</ServiceType>
-          <ServiceDescription>UPS Ground</ServiceDescription>
-          <TotalCharges>11.75</TotalCharges>
-          <Currency>USD</Currency>
-          <EstimatedDeliveryDate>2026-04-04</EstimatedDeliveryDate>
-        </Rate>
-      </RateDetails>
-    </Shipment>
-  </ShipTransaction>
-</RateResponse>
+<RateShoppingResponse>
+  <IsSuccess>true</IsSuccess>
+  <AvailableServices>
+    <AvailableService>
+      <ShippingAccountNumber>SR36232408</ShippingAccountNumber>
+      <Name>USPS Ground Advantage</Name>
+      <ServiceType>USPSGNDADV</ServiceType>
+      <Currency>USD</Currency>
+      <CarrierRate>12.07</CarrierRate>
+      <Total>12.27</Total>
+      <TimeInTransitBusinessDays>4</TimeInTransitBusinessDays>
+      <ExpectedDelivery>4/4/2026 12:00:00 AM</ExpectedDelivery>
+      <ShipmentQuoteId>rate_abc123</ShipmentQuoteId>
+    </AvailableService>
+    <AvailableService>
+      <ShippingAccountNumber>SR36232408</ShippingAccountNumber>
+      <Name>USPS Priority</Name>
+      <ServiceType>U02</ServiceType>
+      <Currency>USD</Currency>
+      <CarrierRate>16.99</CarrierRate>
+      <Total>16.99</Total>
+      <TimeInTransitBusinessDays>2</TimeInTransitBusinessDays>
+      <ExpectedDelivery>4/1/2026 12:00:00 AM</ExpectedDelivery>
+      <ShipmentQuoteId>rate_def456</ShipmentQuoteId>
+    </AvailableService>
+  </AvailableServices>
+</RateShoppingResponse>
