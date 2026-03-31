@@ -2,7 +2,6 @@ import httpx
 
 from shiprush.models import (
     Address,
-    AddressValidationResult,
     Package,
     RateResult,
     ShipmentResult,
@@ -10,13 +9,11 @@ from shiprush.models import (
     VoidResult,
 )
 from shiprush.xml_builder import (
-    build_address_validate_request,
     build_rate_request,
     build_ship_request,
     build_void_request,
 )
 from shiprush.xml_parser import (
-    parse_address_validate_response,
     parse_rate_response,
     parse_ship_response,
     parse_track_response,
@@ -86,7 +83,3 @@ class ShipRushClient:
         response_xml = await self._post("/shipmentservice.svc/shipment/void", xml)
         return parse_void_response(response_xml)
 
-    async def validate_address(self, address: Address) -> AddressValidationResult:
-        xml = build_address_validate_request(address)
-        response_xml = await self._post("/shipmentservice.svc/address/validate", xml)
-        return parse_address_validate_response(response_xml)

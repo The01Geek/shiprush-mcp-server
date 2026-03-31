@@ -2,7 +2,6 @@ import xml.etree.ElementTree as ET
 
 from shiprush.models import (
     Address,
-    AddressValidationResult,
     RateResult,
     ShipmentResult,
     TrackingEvent,
@@ -105,21 +104,3 @@ def parse_void_response(xml_str: str) -> VoidResult:
     )
 
 
-def parse_address_validate_response(xml_str: str) -> AddressValidationResult:
-    root = ET.fromstring(xml_str)
-    _check_errors(root)
-    valid = _get_text(root, "Valid", "false").lower() == "true"
-    corrected = None
-    addr_el = root.find(".//CorrectedAddress/Address")
-    if addr_el is not None:
-        corrected = Address(
-            name=_get_text(addr_el, "FirstName") or None,
-            company=_get_text(addr_el, "Company") or None,
-            street1=_get_text(addr_el, "Address1"),
-            street2=_get_text(addr_el, "Address2") or None,
-            city=_get_text(addr_el, "City"),
-            state=_get_text(addr_el, "State"),
-            postal_code=_get_text(addr_el, "PostalCode"),
-            country=_get_text(addr_el, "Country"),
-        )
-    return AddressValidationResult(valid=valid, corrected_address=corrected)

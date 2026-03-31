@@ -1,0 +1,9 @@
+  AWS AgentCore MCP Deployment
+                                                                                                                                                                                                                  
+  - AgentCore Runtime hosts MCP servers as ARM64 containers listening on 0.0.0.0:8000/mcp                                                                                                                           - Uses streamable-HTTP transport (not stdio)                                                                                                                                                                    
+  - Supports stateless (default) and stateful modes (for elicitation/sampling/progress)                                                                                                                             - Deploy via agentcore configure + agentcore launch (2-command deployment)                                                                                                                                      
+  - Python 3.10+ with FastMCP framework + bedrock-agentcore-starter-toolkit                                                                                                                                       
+  - AgentCore Gateway can front your MCP server for routing, auth, and tool discovery                                                                                                                             
+  - Auth options: OAuth 2.0 (Cognito/Auth0), SigV4, or NoAuth
+  - Tool schemas must be fully resolved (no $ref, $defs etc.)
+  - Supported MCP protocol versions: 2025-06-18 and 2025-03-26

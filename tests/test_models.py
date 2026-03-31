@@ -1,4 +1,4 @@
-from shiprush.models import Address, Package, RateResult, ShipmentResult, TrackingEvent, TrackingResult, VoidResult, AddressValidationResult
+from shiprush.models import Address, Package, RateResult, ShipmentResult, TrackingEvent, TrackingResult, VoidResult
 
 
 def test_address_required_fields():
@@ -79,8 +79,3 @@ def test_void_result():
     assert result.message is None
 
 
-def test_address_validation_result():
-    result = AddressValidationResult(valid=True)
-    assert result.corrected_address is None
-    assert result.suggestions == []
-    assert result.errors == []

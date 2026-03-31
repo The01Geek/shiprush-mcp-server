@@ -111,25 +111,6 @@ async def void_shipment(
         return {"error": str(e), "code": "VOID_ERROR"}
 
 
-@mcp.tool()
-async def validate_address(
-    street1: str,
-    city: str,
-    state: str,
-    postal_code: str,
-    country: str = "US",
-    name: str | None = None,
-    company: str | None = None,
-    street2: str | None = None,
-) -> dict:
-    """Validate and correct a shipping address. Returns whether the address is valid, a corrected version if available, and any errors."""
-    address = Address(name=name, company=company, street1=street1, street2=street2, city=city, state=state, postal_code=postal_code, country=country)
-    try:
-        result = await client.validate_address(address)
-        return result.model_dump()
-    except Exception as e:
-        return {"error": str(e), "code": "VALIDATION_ERROR"}
-
 
 if __name__ == "__main__":
     mcp.run(transport="streamable-http")

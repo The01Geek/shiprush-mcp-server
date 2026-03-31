@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from shiprush.xml_parser import parse_rate_response, parse_ship_response, parse_track_response, parse_void_response, parse_address_validate_response
+from shiprush.xml_parser import parse_rate_response, parse_ship_response, parse_track_response, parse_void_response
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -44,12 +44,3 @@ def test_parse_void_response():
     assert result.tracking_number == "794644790132"
     assert result.voided is True
     assert result.message is None
-
-
-def test_parse_address_validate_response():
-    xml_str = (FIXTURES / "address_validate_response.xml").read_text()
-    result = parse_address_validate_response(xml_str)
-    assert result.valid is True
-    assert result.corrected_address is not None
-    assert result.corrected_address.street1 == "123 MAIN ST"
-    assert result.corrected_address.postal_code == "98101-1234"

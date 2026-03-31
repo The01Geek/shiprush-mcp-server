@@ -102,18 +102,3 @@ def build_void_request(tracking_number: str, carrier: str | None = None) -> str:
     return ET.tostring(root, encoding="unicode", xml_declaration=False)
 
 
-def build_address_validate_request(address: Address) -> str:
-    root = ET.Element("AddressValidateRequest")
-    addr_el = ET.SubElement(root, "Address")
-    if address.name:
-        ET.SubElement(addr_el, "FirstName").text = address.name
-    if address.company:
-        ET.SubElement(addr_el, "Company").text = address.company
-    ET.SubElement(addr_el, "Address1").text = address.street1
-    if address.street2:
-        ET.SubElement(addr_el, "Address2").text = address.street2
-    ET.SubElement(addr_el, "City").text = address.city
-    ET.SubElement(addr_el, "State").text = address.state
-    ET.SubElement(addr_el, "PostalCode").text = address.postal_code
-    ET.SubElement(addr_el, "Country").text = address.country
-    return ET.tostring(root, encoding="unicode", xml_declaration=False)

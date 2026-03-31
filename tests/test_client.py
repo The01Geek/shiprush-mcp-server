@@ -32,10 +32,6 @@ VOID_XML = """<VoidResponse><Messages /><IsSuccess>true</IsSuccess>
 <ShipTransaction><Shipment><TrackingNumber>794644790132</TrackingNumber>
 </Shipment></ShipTransaction></VoidResponse>"""
 
-ADDR_XML = """<AddressValidateResponse><Valid>true</Valid>
-<CorrectedAddress><Address><Address1>100 MAIN ST</Address1>
-<City>SEATTLE</City><State>WA</State><PostalCode>98101-1234</PostalCode>
-<Country>US</Country></Address></CorrectedAddress></AddressValidateResponse>"""
 
 
 def _mock_response(text: str, status_code: int = 200):
@@ -81,13 +77,6 @@ async def test_void_shipment():
         result = await client.void_shipment("794644790132")
         assert result.voided is True
 
-
-@pytest.mark.asyncio
-async def test_validate_address():
-    client = ShipRushClient(token="test-token", base_url="https://sandbox.api.my.shiprush.com")
-    with patch.object(client._http, "post", return_value=_mock_response(ADDR_XML)):
-        result = await client.validate_address(ORIGIN)
-        assert result.valid is True
 
 
 @pytest.mark.asyncio

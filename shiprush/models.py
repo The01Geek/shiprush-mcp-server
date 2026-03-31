@@ -56,8 +56,3 @@ class VoidResult(BaseModel):
     message: str | None = None
 
 
-class AddressValidationResult(BaseModel):
-    valid: bool
-    corrected_address: Address | None = None
-    suggestions: list[str] = []
-    errors: list[str] = []

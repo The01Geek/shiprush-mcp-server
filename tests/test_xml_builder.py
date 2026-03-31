@@ -1,7 +1,7 @@
 import xml.etree.ElementTree as ET
 
 from shiprush.models import Address, Package
-from shiprush.xml_builder import build_rate_request, build_ship_request, build_void_request, build_address_validate_request
+from shiprush.xml_builder import build_rate_request, build_ship_request, build_void_request
 
 
 ORIGIN = Address(
@@ -95,11 +95,3 @@ def test_build_void_request():
     assert shipment.find("Carrier").text == "1"  # FedEx maps to carrier code 1
 
 
-def test_build_address_validate_request():
-    addr = Address(street1="123 Main St", city="Seattle", state="WA", postal_code="98101", country="US")
-    xml_str = build_address_validate_request(addr)
-    root = ET.fromstring(xml_str)
-    assert root.tag == "AddressValidateRequest"
-    address = root.find("Address")
-    assert address.find("Address1").text == "123 Main St"
-    assert address.find("City").text == "Seattle"
